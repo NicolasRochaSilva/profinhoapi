@@ -118,3 +118,5 @@ VALUES (
     'admin'
 )
 ON CONFLICT (token) DO NOTHING;
+
+
