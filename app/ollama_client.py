@@ -119,19 +119,26 @@ class OllamaClient:
             logger.warning("Não foi possível consultar /api/ps: %s", exc)
             return []
 
-    async def preload_modelos_quentes(self) -> None:
-        """Carrega roteador, chat, coder e edu na RAM (startup da API)."""
-        if not settings.ollama_preload_quentes:
-            return
+    async def preload_modelos_quentes(self, *, forcar: bool = False) -> dict[str, Any]:
+        """Carrega roteador, chat, coder e edu na RAM. Retorna relatório por modelo."""
+        if not forcar and not settings.ollama_preload_quentes:
+            return {
+                "ok": False,
+                "ignorado": True,
+                "motivo": "OLLAMA_PRELOAD_QUENTES=false (use forcar via POST /ollama/preload).",
+                "modelos": [],
+            }
         if not await self.health():
             logger.warning("Ollama offline; pré-carga de modelos quentes ignorada.")
-            return
+            return {"ok": False, "erro": "Ollama indisponível.", "modelos": []}
+
         ordem = [
             settings.model_router,
             settings.model_chat,
             settings.model_code,
             settings.model_edu,
         ]
+        resultados: list[dict[str, Any]] = []
         for model in ordem:
             try:
                 logger.info("Pré-carregando modelo quente na RAM: %s", model)
@@ -142,8 +149,19 @@ class OllamaClient:
                     options={"num_predict": 1},
                     keep_alive=settings.ollama_quentes_keep_alive,
                 )
+                resultados.append({"modelo": model, "ok": True})
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Falha ao pré-carregar %s: %s", model, exc)
+                resultados.append({"modelo": model, "ok": False, "erro": str(exc)})
+
+        carregados = await self.modelos_carregados()
+        nomes_ram = [m.get("name") for m in carregados if m.get("name")]
+        return {
+            "ok": all(r["ok"] for r in resultados),
+            "keep_alive": settings.ollama_quentes_keep_alive,
+            "aquecidos": resultados,
+            "modelos_na_ram": nomes_ram,
+        }
 
     async def descarregar(self, model: str) -> bool:
         """Descarrega um modelo da RAM imediatamente (keep_alive = 0)."""

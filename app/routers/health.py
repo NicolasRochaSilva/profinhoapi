@@ -55,6 +55,17 @@ async def ollama_loaded(_=Depends(require_token)):
     return {"modelos": await ollama.modelos_carregados()}
 
 
+@router.post("/ollama/preload", summary="Pré-aquecer os 4 modelos quentes na RAM")
+async def ollama_preload(_=Depends(require_token)):
+    """Carrega na RAM: llama3.2:3b, llama3.1:8b, qwen2.5-coder:7b e qwen2.5:7b.
+
+    Pode levar vários minutos na primeira vez. Usa `OLLAMA_QUENTES_KEEP_ALIVE` (padrão -1).
+    """
+    if not await ollama.health():
+        raise HTTPException(status_code=503, detail="Ollama indisponível.")
+    return await ollama.preload_modelos_quentes(forcar=True)
+
+
 @router.post("/ollama/unload", summary="Descarregar modelo(s) da RAM")
 async def ollama_unload(model: str | None = None, _=Depends(require_token)):
     """Descarrega um modelo específico (?model=...) ou todos (sem parâmetro)."""

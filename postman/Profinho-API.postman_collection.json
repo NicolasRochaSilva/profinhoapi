@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Profinho API",
-    "description": "Collection da **Profinho API** — IA educacional multi-modelo (Ollama) com roteador, visão, pesquisa web, agente e memória.\n\n**Configuração:**\n1. Defina as variáveis `baseUrl` (ex.: `http://localhost:7000`) e `token` (Bearer da tabela `tokens`).\n2. Endpoints públicos estão na pasta *Status* sem autenticação.\n3. Demais requests usam `Authorization: Bearer {{token}}`.\n\nDocumentação: `docs/FUNCIONALIDADES.md` | Swagger: `{{baseUrl}}/docs`",
+    "description": "Collection da **Profinho API** — IA educacional multi-modelo (Ollama) com roteador, visão, pesquisa web, agente e memória.\n\n**Configuração:**\n1. `baseUrl` — ex.: `https://profinhoapi.youteach.com.br` ou `http://localhost:7000`\n2. `token` — Bearer = **SHA-256 hex** gravado em `tokens.token` (demo: `d2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576`)\n3. Pasta *Status* = sem auth; demais = Bearer `{{token}}`\n4. Antes de testar chat: execute **Ollama → Pré-aquecer 4 modelos** (pode levar minutos)\n\nDocumentação: `docs/FUNCIONALIDADES.md` | Swagger: `{{baseUrl}}/docs`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -23,7 +23,7 @@
     },
     {
       "key": "token",
-      "value": "",
+      "value": "d2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576",
       "type": "string"
     },
     {
@@ -81,8 +81,17 @@
     },
     {
       "name": "Ollama (RAM)",
-      "description": "Gerenciamento de modelos carregados na RAM.",
+      "description": "Gerenciamento de modelos na RAM. Modelos quentes (não descarregam via unload): llama3.2:3b, llama3.1:8b, qwen2.5-coder:7b, qwen2.5:7b.",
       "item": [
+        {
+          "name": "Pré-aquecer 4 modelos quentes",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/ollama/preload",
+            "description": "Carrega na RAM: llama3.2:3b (roteador), llama3.1:8b (chat), qwen2.5-coder:7b, qwen2.5:7b. Pode levar vários minutos. Usa OLLAMA_QUENTES_KEEP_ALIVE (padrão -1 = Forever)."
+          }
+        },
         {
           "name": "Modelos carregados",
           "request": {
@@ -98,7 +107,7 @@
             "method": "POST",
             "header": [],
             "url": "{{baseUrl}}/ollama/unload",
-            "description": "Descarrega todos os modelos da RAM."
+            "description": "Descarrega modelos da RAM. Os 4 modelos quentes são protegidos e não são descarregados."
           }
         },
         {
@@ -139,6 +148,35 @@
             },
             "url": "{{baseUrl}}/route",
             "description": "Classifica o prompt sem gerar resposta longa."
+          }
+        },
+        {
+          "name": "Chat (olá — rápido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.sessao_id) pm.collectionVariables.set('sessao_id', json.sessao_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"olá\",\n  \"categoria\": \"chat\",\n  \"temperature\": 0.7,\n  \"usar_web\": false,\n  \"salvar\": true\n}"
+            },
+            "url": "{{baseUrl}}/chat",
+            "description": "Saudação rápida: força chat, sem web, sem roteador. Pré-aqueça os modelos antes."
           }
         },
         {
