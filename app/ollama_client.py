@@ -9,10 +9,10 @@ Gerencia também o uso de RAM:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
 
@@ -31,6 +31,28 @@ class OllamaClient:
         if model in settings.modelos_quentes:
             return settings.ollama_quentes_keep_alive
         return self.keep_alive
+
+    @staticmethod
+    def _format_keep_alive(value: str) -> Union[str, int]:
+        """Ollama aceita '5m' ou segundos inteiros; -1 (int) = forever (não string '-1')."""
+        v = value.strip()
+        if v == "-1":
+            return -1
+        if v == "0":
+            return 0
+        if v.isdigit():
+            return int(v)
+        return v
+
+    @staticmethod
+    def _formatar_erro_ollama(exc: Exception) -> str:
+        causa = exc
+        if isinstance(exc, RetryError) and exc.last_attempt.failed:
+            causa = exc.last_attempt.exception() or exc
+        if isinstance(causa, httpx.HTTPStatusError):
+            corpo = (causa.response.text or "")[:400]
+            return f"HTTP {causa.response.status_code}: {corpo or causa.response.reason_phrase}"
+        return str(exc)
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=4))
     async def generate(
@@ -55,7 +77,7 @@ class OllamaClient:
             "model": model,
             "prompt": prompt,
             "stream": False,
-            "keep_alive": self._resolve_keep_alive(model, keep_alive),
+            "keep_alive": self._format_keep_alive(self._resolve_keep_alive(model, keep_alive)),
             "options": {"temperature": temperature, **(options or {})},
         }
         if system:
@@ -87,7 +109,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
-            "keep_alive": self._resolve_keep_alive(model, keep_alive),
+            "keep_alive": self._format_keep_alive(self._resolve_keep_alive(model, keep_alive)),
             "options": {"temperature": temperature, **(options or {})},
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -144,21 +166,23 @@ class OllamaClient:
                 logger.info("Pré-carregando modelo quente na RAM: %s", model)
                 await self.generate(
                     model=model,
-                    prompt=".",
+                    prompt="",
                     temperature=0.0,
                     options={"num_predict": 1},
                     keep_alive=settings.ollama_quentes_keep_alive,
                 )
                 resultados.append({"modelo": model, "ok": True})
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Falha ao pré-carregar %s: %s", model, exc)
-                resultados.append({"modelo": model, "ok": False, "erro": str(exc)})
+                msg = self._formatar_erro_ollama(exc)
+                logger.warning("Falha ao pré-carregar %s: %s", model, msg)
+                resultados.append({"modelo": model, "ok": False, "erro": msg})
 
         carregados = await self.modelos_carregados()
         nomes_ram = [m.get("name") for m in carregados if m.get("name")]
         return {
             "ok": all(r["ok"] for r in resultados),
             "keep_alive": settings.ollama_quentes_keep_alive,
+            "ollama_base_url": self.base_url,
             "aquecidos": resultados,
             "modelos_na_ram": nomes_ram,
         }
