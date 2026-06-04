@@ -1,0 +1,112 @@
+# ==========================================================
+# Profinho API - stack de produção na VPS (multi-ambiente)
+#
+# O deploy (GitHub Actions) sobe UM serviço por branch:
+#   main    -> profinho-main    (porta 7000)  <- principal exigida
+#   develop -> profinho-develop (porta 7001)
+#   demo    -> profinho-demo    (porta 7002)
+#   homolog -> profinho-homolog (porta 7003)
+#
+# SearXNG e Crawl4AI são compartilhados. O Ollama roda no HOST da VPS.
+# Suba os serviços compartilhados uma vez:
+#   docker compose -f docker-compose.vps.yml up -d searxng crawl4ai
+# ==========================================================
+
+x-profinho-base: &profinho-base
+  build: .
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment: &profinho-env
+    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-600}
+    OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+    OLLAMA_MODELO_UNICO: ${OLLAMA_MODELO_UNICO:-true}
+    MODEL_ROUTER: ${MODEL_ROUTER:-llama3.2:3b}
+    MODEL_CHAT: ${MODEL_CHAT:-llama3.1:8b}
+    MODEL_CODE: ${MODEL_CODE:-qwen2.5-coder:7b}
+    MODEL_EDU: ${MODEL_EDU:-qwen2.5:7b}
+    MODEL_VISION: ${MODEL_VISION:-qwen2.5vl:7b}
+    POSTGRES_HOST: ${POSTGRES_HOST:-92.113.34.26}
+    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    POSTGRES_DB: ${POSTGRES_DB:-profinho}
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-134497Nico@}
+    SEARXNG_BASE_URL: http://searxng:8080
+    CRAWL4AI_BASE_URL: http://crawl4ai:11235
+    MASTER_TOKEN: ${MASTER_TOKEN:-}
+    AGENT_WORKSPACE: /workspace
+  networks:
+    - profinho
+
+services:
+  profinho-main:
+    <<: *profinho-base
+    container_name: profinho-main
+    ports:
+      - "7000:7000"
+    environment:
+      <<: *profinho-env
+      ENVIRONMENT: production
+    volumes:
+      - profinho_ws_main:/workspace
+
+  profinho-develop:
+    <<: *profinho-base
+    container_name: profinho-develop
+    ports:
+      - "7001:7000"
+    environment:
+      <<: *profinho-env
+      ENVIRONMENT: develop
+    volumes:
+      - profinho_ws_develop:/workspace
+
+  profinho-demo:
+    <<: *profinho-base
+    container_name: profinho-demo
+    ports:
+      - "7002:7000"
+    environment:
+      <<: *profinho-env
+      ENVIRONMENT: demo
+    volumes:
+      - profinho_ws_demo:/workspace
+
+  profinho-homolog:
+    <<: *profinho-base
+    container_name: profinho-homolog
+    ports:
+      - "7003:7000"
+    environment:
+      <<: *profinho-env
+      ENVIRONMENT: homolog
+    volumes:
+      - profinho_ws_homolog:/workspace
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: profinho-searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    networks:
+      - profinho
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: profinho-crawl4ai
+    restart: unless-stopped
+    shm_size: "1g"
+    networks:
+      - profinho
+
+networks:
+  profinho:
+    driver: bridge
+
+volumes:
+  profinho_ws_main:
+  profinho_ws_develop:
+  profinho_ws_demo:
+  profinho_ws_homolog:

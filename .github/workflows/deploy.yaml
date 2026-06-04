@@ -1,0 +1,197 @@
+name: Deploy Profinho API na VPS
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - demo
+      - homolog
+      - homog
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Descomente a linha abaixo se VPS_* estiver em Settings → Environments (não em Repository secrets)
+    # environment: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Definir variáveis de deploy
+        id: vars
+        shell: bash
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            main)
+              echo "service_name=profinho-main" >> "$GITHUB_OUTPUT"
+              echo "deploy_dir=/opt/profinho/main" >> "$GITHUB_OUTPUT"
+              ;;
+            develop)
+              echo "service_name=profinho-develop" >> "$GITHUB_OUTPUT"
+              echo "deploy_dir=/opt/profinho/develop" >> "$GITHUB_OUTPUT"
+              ;;
+            demo)
+              echo "service_name=profinho-demo" >> "$GITHUB_OUTPUT"
+              echo "deploy_dir=/opt/profinho/demo" >> "$GITHUB_OUTPUT"
+              ;;
+            homolog|homog)
+              echo "service_name=profinho-homolog" >> "$GITHUB_OUTPUT"
+              echo "deploy_dir=/opt/profinho/homolog" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Branch não mapeada: ${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Gerar pacote de deploy
+        shell: bash
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.vscode' \
+            --exclude='.idea' \
+            --exclude='__pycache__' \
+            --exclude='.venv' \
+            -czf deploy.tar.gz \
+            Dockerfile \
+            .dockerignore \
+            docker-compose.vps.yml \
+            requirements.txt \
+            app \
+            sql \
+            searxng
+
+      - name: Diagnóstico de credenciais
+        shell: bash
+        run: |
+          echo "Repositório em execução: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Evento: ${{ github.event_name }}"
+          echo ""
+          echo "Onde o workflow procura os valores:"
+          echo "  VPS_HOST  → secret: ${{ secrets.VPS_HOST != '' && 'definido' || 'ausente' }} | variable: ${{ vars.VPS_HOST != '' && 'definido' || 'ausente' }}"
+          echo "  VPS_USER  → secret: ${{ secrets.VPS_USER != '' && 'definido' || 'ausente' }} | variable: ${{ vars.VPS_USER != '' && 'definido' || 'ausente' }}"
+          echo "  VPS_SSH_KEY → secret: ${{ secrets.VPS_SSH_KEY != '' && 'definido' || 'ausente' }} (somente secret; nunca variable)"
+          echo ""
+          echo "Valor efetivo após fallback (secret || variable):"
+          echo "  VPS_HOST:  ${{ env.VPS_HOST != '' && 'ok' || 'VAZIO' }}"
+          echo "  VPS_USER:  ${{ env.VPS_USER != '' && 'ok' || 'VAZIO' }}"
+          echo "  VPS_SSH_KEY: ${{ env.VPS_SSH_KEY != '' && 'ok' || 'VAZIO' }}"
+
+      - name: Validar credenciais de deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+
+          if [ -z "${VPS_HOST:-}" ]; then
+            echo "::error::VPS_HOST vazio. Use Repository secret VPS_HOST ou Repository variable VPS_HOST (aba Variables)."
+            missing=1
+          fi
+          if [ -z "${VPS_USER:-}" ]; then
+            echo "::error::VPS_USER vazio. Use Repository secret VPS_USER ou Repository variable VPS_USER."
+            missing=1
+          fi
+          if [ -z "${VPS_SSH_KEY:-}" ]; then
+            echo "::error::VPS_SSH_KEY vazio. A chave privada deve estar em Repository secrets (não na aba Variables)."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "Checklist:"
+            echo "  1. Confirme o repositório: ${{ github.repository }}."
+            echo "  2. Settings → Secrets and variables → Actions → aba Secrets (nomes exatos: VPS_HOST, VPS_USER, VPS_SSH_KEY)."
+            echo "  3. Se usou Organization secrets: Organization → Settings → Secrets → libere acesso a este repositório."
+            echo "  4. Se criou em Environment: descomente 'environment: ...' no topo do job deploy.yaml."
+            echo "  5. HOST/USER podem estar na aba Variables; a chave SSH deve ser Secret."
+            exit 1
+          fi
+
+      - name: Configurar acesso SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d "${HOME}/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "${HOME}/.ssh/id_rsa"
+          chmod 600 "${HOME}/.ssh/id_rsa"
+          if ! grep -q "PRIVATE KEY" "${HOME}/.ssh/id_rsa"; then
+            echo "::error::VPS_SSH_KEY não parece uma chave privada OpenSSH válida."
+            exit 1
+          fi
+          if ! ssh-keyscan -T 10 -H "$VPS_HOST" >> "${HOME}/.ssh/known_hosts" 2>/dev/null; then
+            echo "::warning::ssh-keyscan falhou; usando StrictHostKeyChecking=accept-new no SSH."
+            touch "${HOME}/.ssh/known_hosts"
+            chmod 644 "${HOME}/.ssh/known_hosts"
+            {
+              echo "Host $VPS_HOST"
+              echo "  StrictHostKeyChecking accept-new"
+              echo "  UserKnownHostsFile ${HOME}/.ssh/known_hosts"
+            } >> "${HOME}/.ssh/config"
+            chmod 600 "${HOME}/.ssh/config"
+          else
+            chmod 644 "${HOME}/.ssh/known_hosts"
+          fi
+
+      - name: Garantir diretório de deploy na VPS
+        shell: bash
+        env:
+          DEPLOY_DIR: ${{ steps.vars.outputs.deploy_dir }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=15 "${VPS_USER}@${VPS_HOST}" "mkdir -p '${DEPLOY_DIR}'"
+
+      - name: Enviar pacote para a VPS
+        shell: bash
+        env:
+          DEPLOY_DIR: ${{ steps.vars.outputs.deploy_dir }}
+        run: |
+          set -euo pipefail
+          scp -o BatchMode=yes -o ConnectTimeout=15 deploy.tar.gz "${VPS_USER}@${VPS_HOST}:${DEPLOY_DIR}/deploy.tar.gz"
+
+      - name: Atualizar container do ambiente na VPS
+        shell: bash
+        env:
+          DEPLOY_DIR: ${{ steps.vars.outputs.deploy_dir }}
+          SERVICE_NAME: ${{ steps.vars.outputs.service_name }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          MASTER_TOKEN: ${{ secrets.MASTER_TOKEN }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=15 "${VPS_USER}@${VPS_HOST}" \
+            "DEPLOY_DIR='${DEPLOY_DIR}' SERVICE_NAME='${SERVICE_NAME}' POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' MASTER_TOKEN='${MASTER_TOKEN}' bash -s" <<'EOF'
+          set -euo pipefail
+          cd "$DEPLOY_DIR"
+          tar -xzf deploy.tar.gz
+          rm -f deploy.tar.gz
+
+          if ! docker compose version >/dev/null 2>&1; then
+            echo "docker compose (v2) não encontrado na VPS. Instale docker-compose-plugin."
+            exit 1
+          fi
+
+          # Grava .env com segredos vindos do GitHub (sobrescreve os defaults do compose se enviados).
+          {
+            [ -n "${POSTGRES_PASSWORD:-}" ] && echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            [ -n "${MASTER_TOKEN:-}" ] && echo "MASTER_TOKEN=${MASTER_TOKEN}"
+          } > .env || true
+
+          docker compose -f docker-compose.vps.yml config >/dev/null
+
+          # Garante que os serviços compartilhados (busca/leitura) estejam de pé.
+          docker compose -f docker-compose.vps.yml up -d searxng crawl4ai
+
+          docker compose -f docker-compose.vps.yml build "${SERVICE_NAME}"
+          docker compose -f docker-compose.vps.yml rm -sf "${SERVICE_NAME}" >/dev/null 2>&1 || true
+          docker rm -f "${SERVICE_NAME}" >/dev/null 2>&1 || true
+          docker compose -f docker-compose.vps.yml up -d --no-deps "${SERVICE_NAME}"
+
+          docker image prune -f
+          EOF

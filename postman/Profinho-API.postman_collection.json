@@ -1,0 +1,670 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Profinho API",
+    "description": "Collection da **Profinho API** — IA educacional multi-modelo (Ollama) com roteador, visão, pesquisa web, agente e memória.\n\n**Configuração:**\n1. Defina as variáveis `baseUrl` (ex.: `http://localhost:7000`) e `token` (Bearer da tabela `tokens`).\n2. Endpoints públicos estão na pasta *Status* sem autenticação.\n3. Demais requests usam `Authorization: Bearer {{token}}`.\n\nDocumentação: `docs/FUNCIONALIDADES.md` | Swagger: `{{baseUrl}}/docs`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:7000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessao_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "projeto",
+      "value": "meu-projeto",
+      "type": "string"
+    },
+    {
+      "key": "memoria_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Status (público)",
+      "description": "Endpoints sem autenticação: `/`, `/health`, `/status`.",
+      "item": [
+        {
+          "name": "Raiz",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/",
+            "description": "Metadados da API (nome, docs, porta)."
+          }
+        },
+        {
+          "name": "Healthcheck",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Healthcheck simples."
+          }
+        },
+        {
+          "name": "Status detalhado",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status",
+            "description": "Status de Ollama (modelos instalados/na RAM), PostgreSQL e configuração."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ollama (RAM)",
+      "description": "Gerenciamento de modelos carregados na RAM.",
+      "item": [
+        {
+          "name": "Modelos carregados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ollama/loaded",
+            "description": "Lista modelos atualmente na RAM (`/api/ps`)."
+          }
+        },
+        {
+          "name": "Descarregar todos",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/ollama/unload",
+            "description": "Descarrega todos os modelos da RAM."
+          }
+        },
+        {
+          "name": "Descarregar modelo específico",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ollama/unload?model=llama3.1:8b",
+              "host": ["{{baseUrl}}"],
+              "path": ["ollama", "unload"],
+              "query": [
+                {
+                  "key": "model",
+                  "value": "llama3.1:8b",
+                  "description": "Nome do modelo Ollama"
+                }
+              ]
+            },
+            "description": "Descarrega um modelo específico da RAM."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Roteamento (só decide modelo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Crie uma função em Python que soma dois números\"\n}"
+            },
+            "url": "{{baseUrl}}/route",
+            "description": "Classifica o prompt sem gerar resposta longa."
+          }
+        },
+        {
+          "name": "Chat (roteamento automático)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.sessao_id) pm.collectionVariables.set('sessao_id', json.sessao_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Explique o que é fotossíntese de forma simples para alunos do 6º ano\",\n  \"temperature\": 0.7,\n  \"usar_web\": false,\n  \"salvar\": true\n}"
+            },
+            "url": "{{baseUrl}}/chat",
+            "description": "Chat com roteador automático. Salva `sessao_id` na variável da collection."
+          }
+        },
+        {
+          "name": "Chat (categoria educação)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Monte um plano de aula de 50 minutos sobre frações\",\n  \"categoria\": \"educacao\",\n  \"temperature\": 0.7\n}"
+            },
+            "url": "{{baseUrl}}/chat"
+          }
+        },
+        {
+          "name": "Chat (programação)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Escreva um endpoint FastAPI que lista usuários com paginação\",\n  \"categoria\": \"programacao\",\n  \"temperature\": 0.3\n}"
+            },
+            "url": "{{baseUrl}}/chat"
+          }
+        },
+        {
+          "name": "Chat (com pesquisa web)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Quais são as novidades do Python 3.13?\",\n  \"usar_web\": true,\n  \"salvar\": true\n}"
+            },
+            "url": "{{baseUrl}}/chat",
+            "description": "Pesquisa SearXNG + Crawl4AI antes de responder. Campo `fontes` na resposta."
+          }
+        },
+        {
+          "name": "Chat (continuar sessão)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Agora gere 5 exercícios sobre o mesmo tema\",\n  \"sessao_id\": \"{{sessao_id}}\",\n  \"salvar\": true\n}"
+            },
+            "url": "{{baseUrl}}/chat",
+            "description": "Continua conversa usando `sessao_id` (histórico carregado do banco)."
+          }
+        },
+        {
+          "name": "Chat (com histórico manual)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"E para o 7º ano?\",\n  \"categoria\": \"educacao\",\n  \"historico\": [\n    { \"role\": \"user\", \"content\": \"Faça um plano de aula de frações para o 6º ano\" },\n    { \"role\": \"assistant\", \"content\": \"Aqui está o plano para o 6º ano...\" }\n  ],\n  \"salvar\": false\n}"
+            },
+            "url": "{{baseUrl}}/chat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Visão",
+      "item": [
+        {
+          "name": "Vision — comentar imagem",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "arquivo",
+                  "type": "file",
+                  "src": [],
+                  "description": "Selecione uma imagem (png, jpg, etc.)"
+                },
+                {
+                  "key": "prompt",
+                  "value": "",
+                  "type": "text",
+                  "description": "Instrução adicional (opcional)"
+                },
+                {
+                  "key": "modo",
+                  "value": "comentar",
+                  "type": "text",
+                  "description": "comentar | pagina | ocr"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/vision"
+          }
+        },
+        {
+          "name": "Vision — OCR",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "arquivo", "type": "file", "src": [] },
+                { "key": "modo", "value": "ocr", "type": "text" }
+              ]
+            },
+            "url": "{{baseUrl}}/vision"
+          }
+        },
+        {
+          "name": "Vision — gerar página HTML",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "arquivo", "type": "file", "src": [] },
+                { "key": "modo", "value": "pagina", "type": "text" },
+                {
+                  "key": "prompt",
+                  "value": "Reproduza o layout com cores fiéis",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/vision",
+            "description": "Gera HTML+CSS+JS a partir do layout da imagem."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pesquisa",
+      "item": [
+        {
+          "name": "Buscar na web",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"FastAPI dependency injection\",\n  \"max_resultados\": 5,\n  \"ler_conteudo\": true\n}"
+            },
+            "url": "{{baseUrl}}/search",
+            "description": "Busca via SearXNG; opcionalmente lê páginas com Crawl4AI."
+          }
+        },
+        {
+          "name": "Documentação → código",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objetivo\": \"Criar um cliente HTTP async com retry exponencial em Python\",\n  \"query_doc\": \"httpx async retry python\",\n  \"max_fontes\": 3\n}"
+            },
+            "url": "{{baseUrl}}/doc-to-code",
+            "description": "Pesquisa documentação e gera código com qwen2.5-coder."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agente",
+      "item": [
+        {
+          "name": "Executar agente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.projeto) pm.collectionVariables.set('projeto', json.projeto);",
+                  "    if (json.sessao_id) pm.collectionVariables.set('sessao_id', json.sessao_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instrucao\": \"Crie um script Python hello_world.py que imprime 'Olá Profinho'\",\n  \"projeto\": \"{{projeto}}\",\n  \"validar\": true,\n  \"usar_web\": false,\n  \"max_iteracoes\": 4\n}"
+            },
+            "url": "{{baseUrl}}/agent/run",
+            "description": "Agente estilo Cursor: cria arquivos, escreve código e valida."
+          }
+        },
+        {
+          "name": "Listar arquivos do projeto",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/agent/projects/{{projeto}}/files"
+          }
+        },
+        {
+          "name": "Ler arquivo do projeto",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agent/projects/{{projeto}}/file?path=hello_world.py",
+              "host": ["{{baseUrl}}"],
+              "path": ["agent", "projects", "{{projeto}}", "file"],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "hello_world.py",
+                  "description": "Caminho relativo no projeto"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Executar comando no projeto",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/agent/projects/{{projeto}}/exec?comando=python hello_world.py",
+              "host": ["{{baseUrl}}"],
+              "path": ["agent", "projects", "{{projeto}}", "exec"],
+              "query": [
+                {
+                  "key": "comando",
+                  "value": "python hello_world.py"
+                }
+              ]
+            },
+            "description": "Executa comando de validação no workspace do agente."
+          }
+        }
+      ]
+    },
+    {
+      "name": "MCP",
+      "item": [
+        {
+          "name": "Listar ferramentas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/mcp/tools"
+          }
+        },
+        {
+          "name": "Chamar ferramenta",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"SELECT 1 AS ok\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/mcp/call/db_query",
+            "description": "Substitua `db_query` pelo nome da tool. Corpo = argumentos da ferramenta."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Memória — Sessões",
+      "item": [
+        {
+          "name": "Criar sessão",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.id) pm.collectionVariables.set('sessao_id', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"chat\",\n  \"titulo\": \"Aula de Matemática\"\n}"
+            },
+            "url": "{{baseUrl}}/sessions"
+          }
+        },
+        {
+          "name": "Listar sessões",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sessions?tipo=chat&incluir_arquivadas=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions"],
+              "query": [
+                { "key": "tipo", "value": "chat", "disabled": true },
+                {
+                  "key": "incluir_arquivadas",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Abrir sessão (com mensagens)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sessions/{{sessao_id}}"
+          }
+        },
+        {
+          "name": "Renomear sessão",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"Plano de aula — Frações\"\n}"
+            },
+            "url": "{{baseUrl}}/sessions/{{sessao_id}}"
+          }
+        },
+        {
+          "name": "Arquivar sessão",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"arquivada\": true\n}"
+            },
+            "url": "{{baseUrl}}/sessions/{{sessao_id}}"
+          }
+        },
+        {
+          "name": "Apagar sessão",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/sessions/{{sessao_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Memória — Longo prazo",
+      "item": [
+        {
+          "name": "Listar memórias",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/memory"
+          }
+        },
+        {
+          "name": "Salvar memória",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.id) pm.collectionVariables.set('memoria_id', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"disciplina\",\n  \"valor\": \"Matemática, 6º ano, turma B\"\n}"
+            },
+            "url": "{{baseUrl}}/memory",
+            "description": "Requer token cadastrado no banco (não o MASTER_TOKEN)."
+          }
+        },
+        {
+          "name": "Apagar memória",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/memory/{{memoria_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "OpenAI Compatible (/v1)",
+      "description": "Use no VS Code (Continue, Cody, etc.): Base URL = `{{baseUrl}}/v1`, API Key = token.",
+      "item": [
+        {
+          "name": "Listar modelos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/models",
+            "description": "Modelos: profinho-auto, profinho-chat, profinho-coder, profinho-edu, profinho-vision."
+          }
+        },
+        {
+          "name": "Chat completions (auto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"profinho-auto\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Escreva uma função em C# que valida CPF\" }\n  ],\n  \"temperature\": 0.3,\n  \"stream\": false\n}"
+            },
+            "url": "{{baseUrl}}/v1/chat/completions"
+          }
+        },
+        {
+          "name": "Chat completions (coder)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"profinho-coder\",\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"Você é um assistente de código.\" },\n    { \"role\": \"user\", \"content\": \"Gere um Dockerfile multi-stage para esta API FastAPI\" }\n  ],\n  \"temperature\": 0.2,\n  \"stream\": false\n}"
+            },
+            "url": "{{baseUrl}}/v1/chat/completions"
+          }
+        },
+        {
+          "name": "Chat completions (stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"profinho-chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Olá, quem é você?\" }\n  ],\n  \"stream\": true\n}"
+            },
+            "url": "{{baseUrl}}/v1/chat/completions",
+            "description": "Resposta SSE (`text/event-stream`)."
+          }
+        }
+      ]
+    }
+  ]
+}

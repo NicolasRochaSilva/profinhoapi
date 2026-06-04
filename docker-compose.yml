@@ -1,0 +1,56 @@
+# ==========================================================
+# Profinho API - stack local/desenvolvimento
+# Sobe: FastAPI (porta 7000) + SearXNG + Crawl4AI
+# O Ollama roda no HOST (fora do Docker) e é acessado via host.docker.internal.
+# PostgreSQL: usa o banco externo definido no .env.
+# ==========================================================
+
+services:
+  profinho-api:
+    build: .
+    container_name: profinho-api
+    restart: unless-stopped
+    ports:
+      - "7000:7000"
+    env_file:
+      - .env
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      SEARXNG_BASE_URL: http://searxng:8080
+      CRAWL4AI_BASE_URL: http://crawl4ai:11235
+    # Permite que o container acesse o Ollama rodando no host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - profinho_workspace:/workspace
+    depends_on:
+      - searxng
+      - crawl4ai
+    networks:
+      - profinho
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: profinho-searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8080/
+    networks:
+      - profinho
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: profinho-crawl4ai
+    restart: unless-stopped
+    shm_size: "1g"
+    networks:
+      - profinho
+
+networks:
+  profinho:
+    driver: bridge
+
+volumes:
+  profinho_workspace:
