@@ -16,6 +16,8 @@ services:
       - .env
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_QUENTES_KEEP_ALIVE: ${OLLAMA_QUENTES_KEEP_ALIVE:--1}
+      OLLAMA_PRELOAD_QUENTES: ${OLLAMA_PRELOAD_QUENTES:-true}
       SEARXNG_BASE_URL: http://searxng:8080
       CRAWL4AI_BASE_URL: http://crawl4ai:11235
     # Permite que o container acesse o Ollama rodando no host.

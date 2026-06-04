@@ -21,6 +21,7 @@ async def require_token(
     Regras:
       - Sem token -> 401.
       - MASTER_TOKEN (se configurado) é sempre aceito.
+      - Bearer deve ser o mesmo valor SHA-256 (hex) gravado em tokens.token.
       - Token precisa existir e estar com Ativo = TRUE.
     """
     if credentials is None or not credentials.credentials:

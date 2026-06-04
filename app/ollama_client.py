@@ -25,6 +25,13 @@ class OllamaClient:
         self.timeout = timeout or settings.ollama_timeout
         self.keep_alive = settings.ollama_keep_alive
 
+    def _resolve_keep_alive(self, model: str, keep_alive: Optional[str]) -> str:
+        if keep_alive is not None:
+            return keep_alive
+        if model in settings.modelos_quentes:
+            return settings.ollama_quentes_keep_alive
+        return self.keep_alive
+
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=4))
     async def generate(
         self,
@@ -48,7 +55,7 @@ class OllamaClient:
             "model": model,
             "prompt": prompt,
             "stream": False,
-            "keep_alive": keep_alive or self.keep_alive,
+            "keep_alive": self._resolve_keep_alive(model, keep_alive),
             "options": {"temperature": temperature, **(options or {})},
         }
         if system:
@@ -80,7 +87,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
-            "keep_alive": keep_alive or self.keep_alive,
+            "keep_alive": self._resolve_keep_alive(model, keep_alive),
             "options": {"temperature": temperature, **(options or {})},
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -112,8 +119,37 @@ class OllamaClient:
             logger.warning("Não foi possível consultar /api/ps: %s", exc)
             return []
 
+    async def preload_modelos_quentes(self) -> None:
+        """Carrega roteador, chat, coder e edu na RAM (startup da API)."""
+        if not settings.ollama_preload_quentes:
+            return
+        if not await self.health():
+            logger.warning("Ollama offline; pré-carga de modelos quentes ignorada.")
+            return
+        ordem = [
+            settings.model_router,
+            settings.model_chat,
+            settings.model_code,
+            settings.model_edu,
+        ]
+        for model in ordem:
+            try:
+                logger.info("Pré-carregando modelo quente na RAM: %s", model)
+                await self.generate(
+                    model=model,
+                    prompt=".",
+                    temperature=0.0,
+                    options={"num_predict": 1},
+                    keep_alive=settings.ollama_quentes_keep_alive,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Falha ao pré-carregar %s: %s", model, exc)
+
     async def descarregar(self, model: str) -> bool:
         """Descarrega um modelo da RAM imediatamente (keep_alive = 0)."""
+        if model in settings.modelos_quentes:
+            logger.info("Modelo quente protegido, não descarregado: %s", model)
+            return False
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
@@ -145,7 +181,12 @@ class OllamaClient:
         for m in carregados:
             nome = m.get("name", "")
             # só mexe nos modelos de trabalho (não derruba o roteador 3b à toa)
-            if nome and nome != model and nome in alvos:
+            if (
+                nome
+                and nome != model
+                and nome in alvos
+                and nome not in settings.modelos_quentes
+            ):
                 await self.descarregar(nome)
 
     async def health(self) -> bool:

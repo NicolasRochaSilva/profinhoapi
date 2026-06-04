@@ -108,7 +108,13 @@ CREATE TRIGGER trg_memorias_atualizado_em
     FOR EACH ROW
     EXECUTE FUNCTION set_atualizado_em();
 
--- Token de exemplo (troque por um real em produção).
+-- Token de demonstração: Bearer = SHA-256 hex (mesmo valor da coluna token).
+-- (derivado de "profinho-demo-token" só para gerar o hash; não envie esse texto na API)
 INSERT INTO tokens (token, ativo, descricao, professor)
-VALUES ('profinho-demo-token', TRUE, 'Token de demonstração', 'admin')
+VALUES (
+    'd2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576',
+    TRUE,
+    'Token de demonstração (SHA-256 hex)',
+    'admin'
+)
 ON CONFLICT (token) DO NOTHING;

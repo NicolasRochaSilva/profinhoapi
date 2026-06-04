@@ -172,7 +172,7 @@ Chat (roteamento automático):
 
 ```bash
 curl -X POST http://localhost:7000/chat \
-  -H "Authorization: Bearer profinho-demo-token" \
+  -H "Authorization: Bearer d2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Crie um plano de aula sobre frações para o 6º ano"}'
 ```
@@ -181,7 +181,7 @@ Agente (cria e valida código):
 
 ```bash
 curl -X POST http://localhost:7000/agent/run \
-  -H "Authorization: Bearer profinho-demo-token" \
+  -H "Authorization: Bearer d2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576" \
   -H "Content-Type: application/json" \
   -d '{"instrucao": "Crie uma API FastAPI de tarefas com testes", "projeto": "todo", "validar": true, "usar_web": true}'
 ```
@@ -190,7 +190,7 @@ Imagem → página web:
 
 ```bash
 curl -X POST http://localhost:7000/vision \
-  -H "Authorization: Bearer profinho-demo-token" \
+  -H "Authorization: Bearer d2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576" \
   -F "modo=pagina" -F "arquivo=@layout.png"
 ```
 
@@ -208,7 +208,7 @@ A API expõe endpoints **compatíveis com a OpenAI** em `/v1`. Configure uma ext
       "provider": "openai",
       "model": "profinho-auto",
       "apiBase": "http://SEU_IP:7000/v1",
-      "apiKey": "profinho-demo-token"
+      "apiKey": "d2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576"
     }
   ]
 }

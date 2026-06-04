@@ -29,6 +29,9 @@ async def status():
             "online": ollama_ok,
             "base_url": settings.ollama_base_url,
             "keep_alive": settings.ollama_keep_alive,
+            "quentes_keep_alive": settings.ollama_quentes_keep_alive,
+            "modelos_quentes": list(settings.modelos_quentes),
+            "preload_quentes": settings.ollama_preload_quentes,
             "modelo_unico": settings.ollama_modelo_unico,
             "modelos_instalados": modelos,
             "modelos_na_ram": [

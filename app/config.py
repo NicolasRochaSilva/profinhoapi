@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Tempo que um modelo fica na RAM após o último uso (formato Ollama: "5m", "30s", "0").
     # "0" = descarrega imediatamente após cada resposta (máxima economia de RAM).
     ollama_keep_alive: str = "5m"
+    # Modelos quentes (roteador, chat, coder, edu): "-1" = RAM até reiniciar o Ollama.
+    ollama_quentes_keep_alive: str = "-1"
+    # Ao subir a API, pré-carrega os modelos quentes no host.
+    ollama_preload_quentes: bool = True
     # Mantém apenas UM modelo pesado na RAM por vez: antes de usar um modelo,
     # descarrega os outros modelos de trabalho que estiverem carregados.
     ollama_modelo_unico: bool = True
@@ -55,6 +59,18 @@ class Settings(BaseSettings):
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    @property
+    def modelos_quentes(self) -> frozenset[str]:
+        """Sempre na RAM: roteador, chat, programação e educação (visão fica sob demanda)."""
+        return frozenset(
+            {
+                self.model_router,
+                self.model_chat,
+                self.model_code,
+                self.model_edu,
+            }
         )
 
     @property

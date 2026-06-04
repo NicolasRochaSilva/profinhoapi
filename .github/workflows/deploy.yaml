@@ -162,11 +162,9 @@ jobs:
         env:
           DEPLOY_DIR: ${{ steps.vars.outputs.deploy_dir }}
           SERVICE_NAME: ${{ steps.vars.outputs.service_name }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          MASTER_TOKEN: ${{ secrets.MASTER_TOKEN }}
         run: |
           ssh -o BatchMode=yes -o ConnectTimeout=15 "${VPS_USER}@${VPS_HOST}" \
-            "DEPLOY_DIR='${DEPLOY_DIR}' SERVICE_NAME='${SERVICE_NAME}' POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' MASTER_TOKEN='${MASTER_TOKEN}' bash -s" <<'EOF'
+            "DEPLOY_DIR='${DEPLOY_DIR}' SERVICE_NAME='${SERVICE_NAME}' bash -s" <<'EOF'
           set -euo pipefail
           cd "$DEPLOY_DIR"
           tar -xzf deploy.tar.gz
@@ -177,11 +175,7 @@ jobs:
             exit 1
           fi
 
-          # Grava .env com segredos vindos do GitHub (sobrescreve os defaults do compose se enviados).
-          {
-            [ -n "${POSTGRES_PASSWORD:-}" ] && echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
-            [ -n "${MASTER_TOKEN:-}" ] && echo "MASTER_TOKEN=${MASTER_TOKEN}"
-          } > .env || true
+          # .env na VPS não é alterado pelo deploy — configure manualmente em cada DEPLOY_DIR.
 
           docker compose -f docker-compose.vps.yml config >/dev/null
 

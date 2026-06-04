@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import close_pool, init_pool
+from app.ollama_client import ollama
 from app.routers import agent, chat, health, images, openai_compat, search, sessions
 
 logging.basicConfig(
@@ -26,6 +27,7 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_pool()
+    await ollama.preload_modelos_quentes()
     yield
     await close_pool()
 
