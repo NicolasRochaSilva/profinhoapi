@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     agent_workspace: str = "/workspace"
     agent_exec_timeout: int = 120
 
+    # Cache semântico (all-MiniLM-L6-v2)
+    cache_enabled: bool = True
+    cache_similaridade_min: float = 0.88
+    cache_reformat_min: float = 0.95
+    cache_max_candidatos: int = 300
+
     @property
     def postgres_dsn(self) -> str:
         return (

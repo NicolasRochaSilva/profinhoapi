@@ -47,6 +47,8 @@ class ChatResponse(BaseModel):
     motivo_web: Optional[str] = None
     fontes: list[str] = Field(default_factory=list)
     sessao_id: Optional[str] = None
+    cache_hit: bool = False
+    motivo_cache: Optional[str] = None
 
 
 class RouteResponse(BaseModel):
