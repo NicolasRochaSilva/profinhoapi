@@ -45,7 +45,7 @@ async def doc_to_code(req: DocCodeRequest, _=Depends(require_token)):
     query = req.query_doc or req.objetivo
     resultados = await searxng.buscar(query, max_resultados=req.max_fontes)
     urls = [r["url"] for r in resultados if r.get("url")]
-    conteudos = await crawl4ai.ler_varias(urls[: req.max_fontes])
+    conteudos = await crawl4ai.ler_varias(urls)
 
     contexto = "\n\n".join(f"### {u}\n{c[:6000]}" for u, c in conteudos.items())
     prompt = (

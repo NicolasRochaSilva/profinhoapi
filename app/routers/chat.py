@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from app.auth import require_token
 from app.config import settings
 from app.ollama_client import ollama
-from app.router_model import rotear
+from app.router_model import decidir_usar_web, rotear
 from app.schemas import ChatRequest, ChatResponse, RouteResponse
 from app.services import crawl4ai, memoria, searxng
 
@@ -36,16 +36,23 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
     else:
         categoria, modelo, motivo = await rotear(req.prompt)
 
+    if req.usar_web is None:
+        usar_web_efetivo, motivo_web = await decidir_usar_web(req.prompt)
+    elif req.usar_web:
+        usar_web_efetivo, motivo_web = True, "Busca web forçada pelo cliente."
+    else:
+        usar_web_efetivo, motivo_web = False, "Busca web desativada pelo cliente."
+
     fontes: list[str] = []
     contexto_web = ""
-    if req.usar_web:
+    if usar_web_efetivo:
         resultados = await searxng.buscar(req.prompt, max_resultados=4)
         urls = [r["url"] for r in resultados if r.get("url")]
-        conteudos = await crawl4ai.ler_varias(urls[:3])
+        conteudos = await crawl4ai.ler_varias(urls, max_chars_total=12000)
         fontes = list(conteudos.keys())
         if conteudos:
             contexto_web = "\n\n".join(
-                f"Fonte: {u}\n{c[:5000]}" for u, c in conteudos.items()
+                f"Fonte: {u}\n{c[:4000]}" for u, c in conteudos.items()
             )
 
     system = req.system or _SYSTEMS.get(categoria, _SYSTEMS["chat"])
@@ -98,6 +105,8 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
         modelo=modelo,
         resposta=resposta,
         motivo_roteamento=motivo,
+        usar_web=usar_web_efetivo,
+        motivo_web=motivo_web,
         fontes=fontes,
         sessao_id=sessao_id,
     )

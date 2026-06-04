@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     searxng_base_url: str = "http://searxng:8080"
     crawl4ai_base_url: str = "http://crawl4ai:11235"
     crawl4ai_token: str = ""
+    crawl4ai_max_paginas: int = 4
 
     # Agente
     agent_workspace: str = "/workspace"

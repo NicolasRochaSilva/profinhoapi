@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from app.config import settings
-from app.keywords import detectar_categoria
+from app.keywords import detectar_categoria, detectar_precisa_web
 from app.ollama_client import ollama
 
 logger = logging.getLogger("profinho.router")
@@ -28,6 +28,17 @@ chat         -> conversa geral, saudações, perguntas gerais, atendimento
 Mensagem: "{mensagem}"
 
 Responda só com uma palavra (programacao, educacao, imagem ou chat):"""
+
+_PROMPT_WEB = """Você decide se a pergunta PRECISA de busca na internet AGORA.
+
+Responda APENAS: sim  ou  nao
+
+sim -> notícias recentes, preços/cotações atuais, eventos de hoje, leis versões novas, doc que muda, dados em tempo real
+nao -> conceitos escolares, planos de aula, código geral, saudações, explicações teóricas que o modelo já sabe
+
+Pergunta: "{mensagem}"
+
+Resposta (sim ou nao):"""
 
 
 def _normalizar(resposta: str) -> str | None:
@@ -76,3 +87,40 @@ async def rotear(texto: str, tem_imagem: bool = False) -> tuple[str, str, str]:
         settings.categories[cat_final],
         f"Fallback para '{cat_final}'.",
     )
+
+
+def _normalizar_sim_nao(resposta: str) -> bool | None:
+    txt = resposta.strip().lower()
+    if not txt:
+        return None
+    primeiro = txt.split()[0]
+    if primeiro in ("sim", "s", "yes") or txt.startswith("sim"):
+        return True
+    if primeiro in ("nao", "não", "n", "no") or txt.startswith("nao") or txt.startswith("não"):
+        return False
+    return None
+
+
+async def decidir_usar_web(texto: str) -> tuple[bool, str]:
+    """Roteador leve (llama3.2:3b) decide se aciona SearXNG + Crawl4AI."""
+    precisa, motivo = detectar_precisa_web(texto)
+    if precisa is not None:
+        return precisa, motivo
+
+    try:
+        resposta = await ollama.generate(
+            model=settings.model_router,
+            prompt=_PROMPT_WEB.format(mensagem=texto[:2000]),
+            temperature=0.0,
+            options={"num_predict": 4},
+        )
+        decisao = _normalizar_sim_nao(resposta)
+        if decisao is not None:
+            acao = "ativada" if decisao else "desativada"
+            return decisao, (
+                f"Roteador {settings.model_router} decidiu: busca web {acao}."
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Roteador web falhou (%s); web desativada.", exc)
+
+    return False, "Fallback: busca web desativada."

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -50,14 +51,22 @@ async def ler_pagina(url: str, max_chars: int = 12000) -> Optional[str]:
 
 
 async def ler_varias(urls: list[str], max_chars_total: int = 24000) -> dict[str, str]:
-    """Lê várias URLs e retorna {url: conteudo}."""
+    """Lê até `CRAWL4AI_MAX_PAGINAS` URLs (padrão 4) em paralelo."""
+    if not urls:
+        return {}
+
+    urls = urls[: settings.crawl4ai_max_paginas]
+
+    por_url = max(4000, max_chars_total // max(len(urls), 1))
+    tarefas = [ler_pagina(url, max_chars=por_url) for url in urls]
+    conteudos = await asyncio.gather(*tarefas)
+
     resultado: dict[str, str] = {}
     restante = max_chars_total
-    for url in urls:
-        if restante <= 0:
-            break
-        conteudo = await ler_pagina(url, max_chars=min(12000, restante))
-        if conteudo:
-            resultado[url] = conteudo
-            restante -= len(conteudo)
+    for url, texto in zip(urls, conteudos):
+        if not texto or restante <= 0:
+            continue
+        fatia = texto[:restante]
+        resultado[url] = fatia
+        restante -= len(fatia)
     return resultado

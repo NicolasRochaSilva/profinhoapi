@@ -20,6 +20,7 @@ services:
       OLLAMA_PRELOAD_QUENTES: ${OLLAMA_PRELOAD_QUENTES:-true}
       SEARXNG_BASE_URL: http://searxng:8080
       CRAWL4AI_BASE_URL: http://crawl4ai:11235
+      CRAWL4AI_MAX_PAGINAS: ${CRAWL4AI_MAX_PAGINAS:-4}
     # Permite que o container acesse o Ollama rodando no host.
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -24,8 +24,12 @@ class ChatRequest(BaseModel):
     historico: list[ChatMessage] = Field(default_factory=list)
     system: Optional[str] = Field(None, description="Instrução de sistema opcional.")
     temperature: float = 0.7
-    usar_web: bool = Field(
-        False, description="Se true, pesquisa na web (SearXNG+Crawl4AI) antes de responder."
+    usar_web: Optional[bool] = Field(
+        None,
+        description=(
+            "null = roteador leve (llama3.2:3b) decide; "
+            "true = força SearXNG+Crawl4AI; false = nunca usa web."
+        ),
     )
     sessao_id: Optional[str] = Field(
         None,
@@ -39,6 +43,8 @@ class ChatResponse(BaseModel):
     modelo: str
     resposta: str
     motivo_roteamento: Optional[str] = None
+    usar_web: bool = False
+    motivo_web: Optional[str] = None
     fontes: list[str] = Field(default_factory=list)
     sessao_id: Optional[str] = None
 
@@ -59,7 +65,7 @@ class VisionRequest(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    max_resultados: int = 5
+    max_resultados: int = Field(4, ge=1, le=4, description="Máximo 4 (limite do Crawl4AI).")
     ler_conteudo: bool = Field(
         True, description="Se true, usa Crawl4AI para ler o conteúdo das páginas."
     )
@@ -82,7 +88,7 @@ class DocCodeRequest(BaseModel):
     query_doc: Optional[str] = Field(
         None, description="Busca de documentação. Se vazio, usa o objetivo."
     )
-    max_fontes: int = 3
+    max_fontes: int = Field(4, ge=1, le=4, description="Páginas lidas pelo Crawl4AI (máx. 4).")
 
 
 class AgentRunRequest(BaseModel):

@@ -36,6 +36,7 @@ x-profinho-base: &profinho-base
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-134497Nico@}
     SEARXNG_BASE_URL: http://searxng:8080
     CRAWL4AI_BASE_URL: http://crawl4ai:11235
+    CRAWL4AI_MAX_PAGINAS: ${CRAWL4AI_MAX_PAGINAS:-4}
     MASTER_TOKEN: ${MASTER_TOKEN:-}
     AGENT_WORKSPACE: /workspace
   networks:

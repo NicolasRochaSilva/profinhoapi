@@ -59,7 +59,7 @@ async def _coletar_docs(query: str, max_fontes: int) -> tuple[str, list[str]]:
     """Busca documentação e lê o conteúdo. Retorna (contexto, fontes)."""
     resultados = await searxng.buscar(query, max_resultados=max_fontes)
     urls = [r["url"] for r in resultados if r.get("url")]
-    conteudos = await crawl4ai.ler_varias(urls[:max_fontes])
+    conteudos = await crawl4ai.ler_varias(urls)
     partes = []
     for url, txt in conteudos.items():
         partes.append(f"### Fonte: {url}\n{txt[:6000]}")
@@ -78,7 +78,7 @@ async def executar_agente(
     contexto_web = ""
 
     if usar_web:
-        contexto_web, fontes = await _coletar_docs(instrucao, max_fontes=3)
+        contexto_web, fontes = await _coletar_docs(instrucao, max_fontes=4)
 
     prompt = instrucao
     if contexto_web:
