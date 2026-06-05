@@ -61,7 +61,7 @@ async def fetch_token(token: str) -> Optional[dict[str, Any]]:
         return None
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, token, ativo, professor, dominio FROM tokens WHERE token = $1",
+            "SELECT id, token, ativo, professor, dominio, tipo_usuario FROM tokens WHERE token = $1",
             token,
         )
     return dict(row) if row else None
@@ -320,5 +320,97 @@ async def deletar_memoria(memoria_id: str, token_id: Optional[str]) -> bool:
     async with pool.acquire() as conn:
         res = await conn.execute(
             "DELETE FROM memorias WHERE id = $1 AND token_id = $2", memoria_id, token_id
+        )
+    return res.endswith("1")
+
+
+# ==========================================================
+# CONTEXTO DO USUÁRIO (classificado, restrito ao token)
+# ==========================================================
+
+
+async def upsert_contexto_usuario(
+    token_id: str,
+    tipo: str,
+    chave: str,
+    valor: str,
+    origem_prompt: Optional[str] = None,
+    confianca: float = 0.8,
+) -> Optional[dict[str, Any]]:
+    pool = get_pool()
+    if pool is None:
+        return None
+    chave_norm = chave.strip().lower().replace(" ", "_")[:120]
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO contexto_usuario
+                    (token_id, tipo, chave, valor, origem_prompt, confianca)
+                VALUES ($1::uuid, $2, $3, $4, $5, $6)
+                ON CONFLICT (token_id, chave) DO UPDATE SET
+                    tipo = EXCLUDED.tipo,
+                    valor = EXCLUDED.valor,
+                    origem_prompt = EXCLUDED.origem_prompt,
+                    confianca = EXCLUDED.confianca
+                RETURNING id, tipo, chave, valor, origem_prompt, confianca, criado_em, atualizado_em
+                """,
+                token_id,
+                tipo,
+                chave_norm,
+                valor[:2000],
+                origem_prompt[:500] if origem_prompt else None,
+                confianca,
+            )
+        return dict(row) if row else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Não foi possível salvar contexto_usuario: %s", exc)
+        return None
+
+
+async def listar_contexto_usuario(
+    token_id: str, limite: int = 40, tipo: Optional[str] = None
+) -> list[dict[str, Any]]:
+    pool = get_pool()
+    if pool is None:
+        return []
+    async with pool.acquire() as conn:
+        if tipo:
+            rows = await conn.fetch(
+                """
+                SELECT id, tipo, chave, valor, origem_prompt, confianca, criado_em, atualizado_em
+                FROM contexto_usuario
+                WHERE token_id = $1::uuid AND tipo = $2
+                ORDER BY atualizado_em DESC
+                LIMIT $3
+                """,
+                token_id,
+                tipo,
+                limite,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, tipo, chave, valor, origem_prompt, confianca, criado_em, atualizado_em
+                FROM contexto_usuario
+                WHERE token_id = $1::uuid
+                ORDER BY atualizado_em DESC
+                LIMIT $2
+                """,
+                token_id,
+                limite,
+            )
+    return [dict(r) for r in rows]
+
+
+async def deletar_contexto_usuario(contexto_id: str, token_id: str) -> bool:
+    pool = get_pool()
+    if pool is None:
+        return False
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            "DELETE FROM contexto_usuario WHERE id = $1::uuid AND token_id = $2::uuid",
+            contexto_id,
+            token_id,
         )
     return res.endswith("1")

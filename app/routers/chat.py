@@ -14,23 +14,13 @@ from app.ollama_client import ollama
 from app.router_model import decidir_usar_web, rotear
 from app.schemas import Categoria, ChatRequest, ChatResponse, RouteResponse
 from app.services import cache_respostas as cache_svc
-from app.services import crawl4ai, memoria, searxng
+from app.services import contexto_usuario as ctx_svc
+from app.services import crawl4ai, memoria, moderacao, perfil_usuario as perfil, searxng
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger("profinho.chat")
 
-_SYSTEMS = {
-    "chat": "Você é o Profinho, um assistente educacional simpático e prestativo. Responda em português do Brasil.",
-    "programacao": "Você é o Profinho Coder, especialista em ASP.NET, Python, SQL, HTML/CSS/JS e APIs. Gere código correto e explique de forma objetiva. Responda em português do Brasil.",
-    "educacao": "Você é o Profinho Educador, especialista em pedagogia. Crie planos de aula, exercícios, provas e resumos claros e bem estruturados. Responda em português do Brasil.",
-    "imagem": "Você é o Profinho Vision, especialista em análise de imagens. Responda em português do Brasil.",
-}
-
-
-def _as_categoria(val: str) -> Categoria:
-    if val in _SYSTEMS:
-        return val  # type: ignore[return-value]
-    return "chat"
+_CATEGORIAS = frozenset({"chat", "programacao", "educacao", "imagem"})
 
 
 async def _pode_usar_cache(req: ChatRequest) -> bool:
@@ -77,6 +67,21 @@ async def _persistir_sessao(
     return sessao_id
 
 
+def _as_categoria(val: str) -> Categoria:
+    if val in _CATEGORIAS:
+        return val  # type: ignore[return-value]
+    return "chat"
+
+
+def _tipo(token: dict) -> str:
+    return perfil.normalizar_tipo(token.get("tipo_usuario"))
+
+
+async def _extrair_contexto(token_id: Optional[str], prompt: str, tipo_usuario: str) -> None:
+    if token_id:
+        await ctx_svc.extrair_e_salvar(token_id, prompt, tipo_usuario=tipo_usuario)
+
+
 @router.post("/route", response_model=RouteResponse, summary="Apenas roteia (escolhe o modelo)")
 async def route(req: ChatRequest, _=Depends(require_token)):
     categoria, modelo, motivo = await rotear(req.prompt)
@@ -88,50 +93,108 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
     t0 = time.perf_counter()
     timings: dict[str, float | int] = {}
     token_id = token.get("id")
+    tipo = _tipo(token)
 
-    # --- Cache / saudação (roteador leve; sem modelo pesado) ---
-    if await _pode_usar_cache(req):
-        if cache_svc.eh_saudacao_simples(req.prompt):
-            t = time.perf_counter()
-            resposta = await cache_svc.responder_saudacao(req.prompt)
-            timings["saudacao_s"] = round(time.perf_counter() - t, 2)
-            categoria: Categoria = req.categoria or "chat"
-            modelo = settings.model_router
+    bloqueio = moderacao.detectar_tema_bloqueado(req.prompt)
+    if bloqueio:
+        resposta = moderacao.resposta_bloqueio(bloqueio, tipo)
+        sessao_id = await _persistir_sessao(
+            req, token_id, resposta, req.categoria or "chat", settings.model_light, []
+        )
+        timings["total_s"] = round(time.perf_counter() - t0, 2)
+        logger.info("POST /chat bloqueado tema=%s tipo=%s", bloqueio.tema, tipo)
+        return ChatResponse(
+            categoria=req.categoria or "chat",
+            modelo=settings.model_light,
+            resposta=resposta,
+            motivo_roteamento="Conteúdo bloqueado pela moderação.",
+            usar_web=False,
+            motivo_web="Tema sensível não permitido.",
+            fontes=[],
+            sessao_id=sessao_id,
+            cache_hit=False,
+            motivo_cache=None,
+            conteudo_bloqueado=True,
+            motivo_bloqueio=bloqueio.motivo,
+            tipo_usuario=tipo,
+        )
+
+    bloco_ctx = await ctx_svc.formatar_bloco(token_id, compacto=True)
+
+    # Saudação: sempre modelo ultra-leve, nunca cai no llama3.1:8b nem no cache antigo.
+    if cache_svc.eh_saudacao_simples(req.prompt):
+        t = time.perf_counter()
+        resposta = await cache_svc.responder_saudacao(req.prompt, bloco_ctx, tipo)
+        timings["saudacao_s"] = round(time.perf_counter() - t, 2)
+        categoria: Categoria = req.categoria or "chat"
+        modelo = settings.model_light
+        sessao_id = await _persistir_sessao(
+            req, token_id, resposta, categoria, modelo, []
+        )
+        await _extrair_contexto(token_id, req.prompt, tipo)
+        timings["total_s"] = round(time.perf_counter() - t0, 2)
+        logger.info("POST /chat saudação | token=%s tipo=%s | tempos=%s", token_id, tipo, timings)
+        return ChatResponse(
+            categoria=categoria,
+            modelo=modelo,
+            resposta=resposta,
+            motivo_roteamento="Saudação respondida pelo modelo ultra-leve.",
+            usar_web=False,
+            motivo_web="Saudação: web não utilizada.",
+            fontes=[],
+            sessao_id=sessao_id,
+            cache_hit=False,
+            motivo_cache=f"Resposta curta via {settings.model_light}.",
+            tipo_usuario=tipo,
+        )
+
+    # Consulta sobre dados pessoais deste token (nunca usa cache de outros).
+    if ctx_svc.eh_consulta_pessoal(req.prompt):
+        t = time.perf_counter()
+        resposta_ctx = await ctx_svc.responder_com_contexto(token_id, req.prompt)
+        timings["contexto_s"] = round(time.perf_counter() - t, 2)
+        if ctx_svc.resposta_contexto_valida(resposta_ctx):
+            categoria = req.categoria or "chat"
+            modelo = settings.model_light
             sessao_id = await _persistir_sessao(
-                req, token_id, resposta, categoria, modelo, []
+                req, token_id, resposta_ctx, categoria, modelo, []
             )
-            await cache_svc.salvar(
-                req.prompt, resposta, categoria, modelo, False, []
-            )
+            await _extrair_contexto(token_id, req.prompt, tipo)
             timings["total_s"] = round(time.perf_counter() - t0, 2)
-            logger.info("POST /chat saudação | tempos=%s", timings)
+            logger.info("POST /chat contexto pessoal | token=%s | tempos=%s", token_id, timings)
             return ChatResponse(
                 categoria=categoria,
                 modelo=modelo,
-                resposta=resposta,
-                motivo_roteamento="Saudação respondida pelo roteador leve.",
+                resposta=resposta_ctx,
+                motivo_roteamento="Resposta via contexto pessoal do token (modelo leve).",
                 usar_web=False,
-                motivo_web="Saudação: web não utilizada.",
+                motivo_web="Dados pessoais: sem web nem cache compartilhado.",
                 fontes=[],
                 sessao_id=sessao_id,
                 cache_hit=False,
-                motivo_cache="Resposta curta via llama3.2:3b.",
+                motivo_cache="Contexto restrito ao token.",
+                tipo_usuario=tipo,
             )
 
+    # --- Cache semântico (por token; genéricas também usam SHARED) ---
+    if await _pode_usar_cache(req):
         t = time.perf_counter()
-        hit = await cache_svc.buscar(req.prompt, req.categoria)
+        hit = await cache_svc.buscar(req.prompt, req.categoria, token_id=token_id)
         timings["cache_busca_s"] = round(time.perf_counter() - t, 2)
         if hit:
             resposta = hit.resposta
-            if hit.similaridade < settings.cache_reformat_min:
+            if hit.similaridade < settings.cache_reformat_min or bloco_ctx:
                 t = time.perf_counter()
-                resposta = await cache_svc.adaptar_resposta_cache(req.prompt, hit.resposta)
+                resposta = await cache_svc.adaptar_resposta_cache(
+                    req.prompt, hit.resposta, bloco_ctx
+                )
                 timings["cache_reformat_s"] = round(time.perf_counter() - t, 2)
             categoria = _as_categoria(hit.categoria)
             modelo = hit.modelo
             sessao_id = await _persistir_sessao(
                 req, token_id, resposta, categoria, modelo, hit.fontes
             )
+            await _extrair_contexto(token_id, req.prompt, tipo)
             timings["total_s"] = round(time.perf_counter() - t0, 2)
             logger.info(
                 "POST /chat CACHE sim=%.2f | tempos=%s", hit.similaridade, timings
@@ -147,6 +210,7 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
                 sessao_id=sessao_id,
                 cache_hit=True,
                 motivo_cache=hit.motivo,
+                tipo_usuario=tipo,
             )
 
     # --- Fluxo normal ---
@@ -185,7 +249,7 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
     else:
         timings["web_s"] = 0.0
 
-    system = req.system or _SYSTEMS.get(categoria, _SYSTEMS["chat"])
+    system = req.system or perfil.system_prompt(categoria, tipo)
 
     sessao_id = None
     if req.salvar:
@@ -236,9 +300,17 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
         )
         timings["salvar_s"] = round(time.perf_counter() - t, 2)
 
+    await _extrair_contexto(token_id, req.prompt, tipo)
+
     if await _pode_usar_cache(req) and not usar_web_efetivo:
         await cache_svc.salvar(
-            req.prompt, resposta, categoria, modelo, usar_web_efetivo, fontes
+            req.prompt,
+            resposta,
+            categoria,
+            modelo,
+            usar_web_efetivo,
+            fontes,
+            token_id=token_id,
         )
 
     timings["total_s"] = round(time.perf_counter() - t0, 2)
@@ -261,4 +333,5 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
         sessao_id=sessao_id,
         cache_hit=False,
         motivo_cache=None,
+        tipo_usuario=tipo,
     )

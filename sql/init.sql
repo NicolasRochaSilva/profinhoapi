@@ -22,12 +22,14 @@ CREATE TABLE IF NOT EXISTS tokens (
     descricao   TEXT,
     professor   TEXT,
     dominio     TEXT,
+    tipo_usuario TEXT        NOT NULL DEFAULT 'professor' CHECK (tipo_usuario IN ('professor', 'aluno')),
     criado_em   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens (token);
 CREATE INDEX IF NOT EXISTS idx_tokens_ativo ON tokens (ativo);
+CREATE INDEX IF NOT EXISTS idx_tokens_tipo_usuario ON tokens (tipo_usuario);
 
 -- Atualiza automaticamente o campo atualizado_em.
 CREATE OR REPLACE FUNCTION set_atualizado_em()
@@ -105,6 +107,29 @@ CREATE INDEX IF NOT EXISTS idx_memorias_token ON memorias (token_id);
 DROP TRIGGER IF EXISTS trg_memorias_atualizado_em ON memorias;
 CREATE TRIGGER trg_memorias_atualizado_em
     BEFORE UPDATE ON memorias
+    FOR EACH ROW
+    EXECUTE FUNCTION set_atualizado_em();
+
+-- Contexto classificado por token (extraído pelo modelo leve ou manual).
+CREATE TABLE IF NOT EXISTS contexto_usuario (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    token_id      UUID         NOT NULL REFERENCES tokens(id) ON DELETE CASCADE,
+    tipo          TEXT         NOT NULL CHECK (tipo IN ('pessoal', 'preferencia', 'contexto', 'outro')),
+    chave         TEXT         NOT NULL,
+    valor         TEXT         NOT NULL,
+    origem_prompt TEXT,
+    confianca     REAL         NOT NULL DEFAULT 0.8,
+    criado_em     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    atualizado_em TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (token_id, chave)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contexto_usuario_token ON contexto_usuario (token_id);
+CREATE INDEX IF NOT EXISTS idx_contexto_usuario_tipo ON contexto_usuario (token_id, tipo);
+
+DROP TRIGGER IF EXISTS trg_contexto_usuario_atualizado_em ON contexto_usuario;
+CREATE TRIGGER trg_contexto_usuario_atualizado_em
+    BEFORE UPDATE ON contexto_usuario
     FOR EACH ROW
     EXECUTE FUNCTION set_atualizado_em();
 

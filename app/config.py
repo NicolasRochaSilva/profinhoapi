@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     ollama_modelo_unico: bool = True
 
     # Modelos
+    model_light: str = "llama3.2:1b"
     model_router: str = "llama3.2:3b"
     model_chat: str = "llama3.1:8b"
     model_code: str = "qwen2.5-coder:7b"
@@ -61,6 +62,9 @@ class Settings(BaseSettings):
     cache_reformat_min: float = 0.95
     cache_max_candidatos: int = 300
 
+    # Extração automática de contexto por token (modelo leve)
+    context_extract_enabled: bool = True
+
     @property
     def postgres_dsn(self) -> str:
         return (
@@ -70,9 +74,10 @@ class Settings(BaseSettings):
 
     @property
     def modelos_quentes(self) -> frozenset[str]:
-        """Sempre na RAM: roteador, chat, programação e educação (visão fica sob demanda)."""
+        """Sempre na RAM: ultra-leve, roteador, chat, programação e educação."""
         return frozenset(
             {
+                self.model_light,
                 self.model_router,
                 self.model_chat,
                 self.model_code,

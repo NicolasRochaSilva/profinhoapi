@@ -49,6 +49,9 @@ class ChatResponse(BaseModel):
     sessao_id: Optional[str] = None
     cache_hit: bool = False
     motivo_cache: Optional[str] = None
+    conteudo_bloqueado: bool = False
+    motivo_bloqueio: Optional[str] = None
+    tipo_usuario: Optional[str] = None
 
 
 class RouteResponse(BaseModel):
@@ -168,6 +171,23 @@ class MemoryInfo(BaseModel):
     chave: str
     valor: str
     origem: Optional[str] = None
+    criado_em: Optional[datetime] = None
+    atualizado_em: Optional[datetime] = None
+
+
+class ContextCreate(BaseModel):
+    chave: str = Field(..., description="Rótulo do fato. Ex.: 'nome', 'escola'.")
+    valor: str = Field(..., description="Conteúdo a lembrar.")
+    tipo: Literal["pessoal", "preferencia", "contexto", "outro"] = "contexto"
+
+
+class ContextInfo(BaseModel):
+    id: str
+    tipo: str
+    chave: str
+    valor: str
+    origem_prompt: Optional[str] = None
+    confianca: float = 0.8
     criado_em: Optional[datetime] = None
     atualizado_em: Optional[datetime] = None
 

@@ -34,7 +34,13 @@ async def require_token(
     token = credentials.credentials.strip()
 
     if settings.master_token and token == settings.master_token:
-        return {"id": None, "token": token, "ativo": True, "professor": "master"}
+        return {
+            "id": None,
+            "token": token,
+            "ativo": True,
+            "professor": "master",
+            "tipo_usuario": "professor",
+        }
 
     record = await fetch_token(token)
     if record is None:

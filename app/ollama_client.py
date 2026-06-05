@@ -155,6 +155,7 @@ class OllamaClient:
             return {"ok": False, "erro": "Ollama indisponível.", "modelos": []}
 
         ordem = [
+            settings.model_light,
             settings.model_router,
             settings.model_chat,
             settings.model_code,

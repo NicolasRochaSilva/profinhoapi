@@ -22,6 +22,7 @@ from app.config import settings
 from app.ollama_client import ollama
 from app.router_model import rotear
 from app.schemas import OpenAIChatRequest
+from app.services import moderacao, perfil_usuario as perfil
 
 router = APIRouter(tags=["openai-compat"])
 
@@ -74,9 +75,47 @@ async def _resolver_modelo(req: OpenAIChatRequest) -> str:
 
 
 @router.post("/v1/chat/completions", summary="Chat completions (OpenAI-compatible)")
-async def chat_completions(req: OpenAIChatRequest, _=Depends(require_token)):
+async def chat_completions(req: OpenAIChatRequest, token=Depends(require_token)):
+    tipo = perfil.normalizar_tipo(token.get("tipo_usuario"))
+    ultima = ""
+    for m in reversed(req.messages):
+        if m.role == "user":
+            ultima = _extrair_texto(m.content)
+            break
+
+    bloqueio = moderacao.detectar_tema_bloqueado(ultima)
+    if bloqueio:
+        texto = moderacao.resposta_bloqueio(bloqueio, tipo)
+        modelo = settings.model_light
+        completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+        criado = int(time.time())
+        return {
+            "id": completion_id,
+            "object": "chat.completion",
+            "created": criado,
+            "model": modelo,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": texto},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
     modelo = await _resolver_modelo(req)
     messages = [{"role": m.role, "content": _extrair_texto(m.content)} for m in req.messages]
+    if messages and messages[0]["role"] != "system":
+        cat = "programacao" if "coder" in (req.model or "") else "chat"
+        messages.insert(
+            0,
+            {"role": "system", "content": perfil.system_prompt(cat, tipo)},
+        )
+    elif messages and messages[0]["role"] == "system" and tipo == "aluno":
+        messages[0]["content"] = (
+            perfil.system_prompt("chat", tipo) + "\n\n" + messages[0]["content"]
+        )
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     criado = int(time.time())
 

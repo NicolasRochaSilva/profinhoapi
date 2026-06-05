@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import require_token
 from app.config import settings
@@ -13,13 +13,20 @@ from app.schemas import (
     SearchResponse,
     SearchResultItem,
 )
-from app.services import crawl4ai, searxng
+from app.services import crawl4ai, moderacao, perfil_usuario as perfil, searxng
 
 router = APIRouter(tags=["pesquisa"])
 
 
 @router.post("/search", response_model=SearchResponse, summary="Buscar na internet (SearXNG)")
-async def search(req: SearchRequest, _=Depends(require_token)):
+async def search(req: SearchRequest, token=Depends(require_token)):
+    tipo = perfil.normalizar_tipo(token.get("tipo_usuario"))
+    bloqueio = moderacao.detectar_tema_bloqueado(req.query)
+    if bloqueio:
+        raise HTTPException(
+            status_code=400,
+            detail=moderacao.resposta_bloqueio(bloqueio, tipo),
+        )
     resultados = await searxng.buscar(req.query, max_resultados=req.max_resultados)
     itens: list[SearchResultItem] = []
 
@@ -41,7 +48,16 @@ async def search(req: SearchRequest, _=Depends(require_token)):
 
 
 @router.post("/doc-to-code", summary="Ler documentação e gerar código baseado nela")
-async def doc_to_code(req: DocCodeRequest, _=Depends(require_token)):
+async def doc_to_code(req: DocCodeRequest, token=Depends(require_token)):
+    tipo = perfil.normalizar_tipo(token.get("tipo_usuario"))
+    bloqueio = moderacao.detectar_tema_bloqueado(req.objetivo) or moderacao.detectar_tema_bloqueado(
+        req.query_doc or ""
+    )
+    if bloqueio:
+        raise HTTPException(
+            status_code=400,
+            detail=moderacao.resposta_bloqueio(bloqueio, tipo),
+        )
     query = req.query_doc or req.objetivo
     resultados = await searxng.buscar(query, max_resultados=req.max_fontes)
     urls = [r["url"] for r in resultados if r.get("url")]

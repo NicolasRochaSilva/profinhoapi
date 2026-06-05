@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app import database as db
+from app.services import contexto_usuario as ctx_svc
 
 # Quantos turnos recentes da sessão entram no contexto (janela de memória curta).
 JANELA_MENSAGENS = 20
@@ -73,14 +74,19 @@ async def montar_contexto(
 
 
 async def _bloco_memorias(token_id: Optional[str]) -> str:
-    memorias = await db.listar_memorias(token_id, limite=30)
-    if not memorias:
-        return ""
-    linhas = [f"- {m['chave']}: {m['valor']}" for m in memorias]
-    return (
-        "Memórias persistentes sobre o usuário (use quando relevante):\n"
-        + "\n".join(linhas)
-    )
+    partes: list[str] = []
+    bloco_ctx = await ctx_svc.formatar_bloco(token_id)
+    if bloco_ctx:
+        partes.append(bloco_ctx)
+
+    memorias = await db.listar_memorias(token_id, limite=20)
+    if memorias:
+        linhas = [f"- {m['chave']}: {m['valor']}" for m in memorias]
+        partes.append(
+            "Memórias manuais adicionais:\n" + "\n".join(linhas)
+        )
+
+    return "\n\n".join(partes)
 
 
 async def registrar_turno(

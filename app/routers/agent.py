@@ -9,12 +9,27 @@ from app.schemas import AgentRunRequest, AgentRunResponse, FileChange
 from app.services import agent as agent_service
 from app.services import agent_executor as ex
 from app.services import mcp, memoria
+from app.services import moderacao, perfil_usuario as perfil
 
 router = APIRouter(tags=["agente"])
 
 
 @router.post("/agent/run", response_model=AgentRunResponse, summary="Executar tarefa do agente")
 async def agent_run(req: AgentRunRequest, token=Depends(require_token)):
+    tipo = perfil.normalizar_tipo(token.get("tipo_usuario"))
+    if not perfil.agente_permitido(tipo):
+        raise HTTPException(
+            status_code=403,
+            detail="O agente de código está disponível apenas para tokens de professor.",
+        )
+
+    bloqueio = moderacao.detectar_tema_bloqueado(req.instrucao)
+    if bloqueio:
+        raise HTTPException(
+            status_code=400,
+            detail=moderacao.resposta_bloqueio(bloqueio, tipo),
+        )
+
     token_id = token.get("id")
     sessao_id = await memoria.garantir_sessao(
         sessao_id=req.sessao_id,

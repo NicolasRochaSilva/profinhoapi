@@ -13,6 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app import database as db
 from app.auth import require_token
 from app.schemas import (
+    ContextCreate,
+    ContextInfo,
     MemoryCreate,
     MemoryInfo,
     MessageInfo,
@@ -136,6 +138,76 @@ async def apagar_memoria(memoria_id: str, token=Depends(require_token)):
     ok = await db.deletar_memoria(memoria_id, token.get("id"))
     if not ok:
         raise HTTPException(status_code=404, detail="Memória não encontrada.")
+    return {"ok": True}
+
+
+# ---------------- Contexto classificado por token ----------------
+
+
+@router.get("/context", response_model=list[ContextInfo], summary="Listar contexto do usuário")
+async def listar_contexto(
+    tipo: str | None = None,
+    token=Depends(require_token),
+):
+    token_id = token.get("id")
+    if token_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Contexto exige um token de banco (não o master).",
+        )
+    itens = await db.listar_contexto_usuario(token_id, limite=100, tipo=tipo)
+    return [
+        ContextInfo(
+            id=str(c["id"]),
+            tipo=c["tipo"],
+            chave=c["chave"],
+            valor=c["valor"],
+            origem_prompt=c.get("origem_prompt"),
+            confianca=float(c.get("confianca") or 0.8),
+            criado_em=c.get("criado_em"),
+            atualizado_em=c.get("atualizado_em"),
+        )
+        for c in itens
+    ]
+
+
+@router.post("/context", response_model=ContextInfo, summary="Salvar contexto manualmente")
+async def salvar_contexto(req: ContextCreate, token=Depends(require_token)):
+    token_id = token.get("id")
+    if token_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Contexto exige um token de banco (não o master).",
+        )
+    row = await db.upsert_contexto_usuario(
+        token_id=token_id,
+        tipo=req.tipo,
+        chave=req.chave,
+        valor=req.valor,
+        origem_prompt="manual",
+    )
+    if not row:
+        raise HTTPException(status_code=503, detail="Banco indisponível.")
+    return ContextInfo(
+        id=str(row["id"]),
+        tipo=row["tipo"],
+        chave=row["chave"],
+        valor=row["valor"],
+        origem_prompt=row.get("origem_prompt"),
+        confianca=float(row.get("confianca") or 0.8),
+        criado_em=row.get("criado_em"),
+        atualizado_em=row.get("atualizado_em"),
+    )
+
+
+@router.delete("/context/{contexto_id}", summary="Apagar um item de contexto")
+async def apagar_contexto(contexto_id: str, token=Depends(require_token)):
+    token_id = token.get("id")
+    if token_id is None:
+        raise HTTPException(status_code=400, detail="Token inválido.")
+    ok = await db.deletar_contexto_usuario(contexto_id, token_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Contexto não encontrado.")
     return {"ok": True}
 
 
