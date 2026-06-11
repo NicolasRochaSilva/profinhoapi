@@ -110,7 +110,11 @@ class OllamaClient:
             "messages": messages,
             "stream": False,
             "keep_alive": self._format_keep_alive(self._resolve_keep_alive(model, keep_alive)),
-            "options": {"temperature": temperature, **(options or {})},
+            "options": {
+                "temperature": temperature,
+                "num_predict": settings.chat_num_predict,
+                **(options or {}),
+            },
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(f"{self.base_url}/api/chat", json=payload)

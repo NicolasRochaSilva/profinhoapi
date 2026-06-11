@@ -30,6 +30,8 @@ KEYWORDS: dict[str, list[str]] = {
         "história", "geografia", "matemática", "matematica", "português", "portugues",
         "ciências", "ciencias", "física", "fisica", "química", "quimica", "biologia",
         "fotossíntese", "fotossintese", "explicar", "explica", "6º ano", "7º ano", "8º ano",
+        "verbo", "verbos", "gramática", "gramatica", "inglês", "ingles", "o que é", "o que e",
+        "definição", "definicao", "to be",
     ],
     "imagem": [
         "imagem", "image", "foto", "print", "screenshot", "captura de tela",

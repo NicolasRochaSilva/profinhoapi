@@ -82,6 +82,21 @@ async def _extrair_contexto(token_id: Optional[str], prompt: str, tipo_usuario: 
         await ctx_svc.extrair_e_salvar(token_id, prompt, tipo_usuario=tipo_usuario)
 
 
+def _extrair_contexto_em_background(
+    token_id: Optional[str], prompt: str, tipo_usuario: str
+) -> None:
+    """Não bloqueia a resposta HTTP."""
+    import asyncio
+
+    if not token_id:
+        return
+    asyncio.create_task(_extrair_contexto(token_id, prompt, tipo_usuario))
+
+
+def _modelo_pesado(modelo: str) -> bool:
+    return modelo in settings.modelos_trabalho
+
+
 @router.post("/route", response_model=RouteResponse, summary="Apenas roteia (escolhe o modelo)")
 async def route(req: ChatRequest, _=Depends(require_token)):
     categoria, modelo, motivo = await rotear(req.prompt)
@@ -131,7 +146,7 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
         sessao_id = await _persistir_sessao(
             req, token_id, resposta, categoria, modelo, []
         )
-        await _extrair_contexto(token_id, req.prompt, tipo)
+        _extrair_contexto_em_background(token_id, req.prompt, tipo)
         timings["total_s"] = round(time.perf_counter() - t0, 2)
         logger.info("POST /chat saudação | token=%s tipo=%s | tempos=%s", token_id, tipo, timings)
         return ChatResponse(
@@ -159,7 +174,7 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
             sessao_id = await _persistir_sessao(
                 req, token_id, resposta_ctx, categoria, modelo, []
             )
-            await _extrair_contexto(token_id, req.prompt, tipo)
+            _extrair_contexto_em_background(token_id, req.prompt, tipo)
             timings["total_s"] = round(time.perf_counter() - t0, 2)
             logger.info("POST /chat contexto pessoal | token=%s | tempos=%s", token_id, timings)
             return ChatResponse(
@@ -194,7 +209,7 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
             sessao_id = await _persistir_sessao(
                 req, token_id, resposta, categoria, modelo, hit.fontes
             )
-            await _extrair_contexto(token_id, req.prompt, tipo)
+            _extrair_contexto_em_background(token_id, req.prompt, tipo)
             timings["total_s"] = round(time.perf_counter() - t0, 2)
             logger.info(
                 "POST /chat CACHE sim=%.2f | tempos=%s", hit.similaridade, timings
@@ -212,6 +227,43 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
                 motivo_cache=hit.motivo,
                 tipo_usuario=tipo,
             )
+
+    # Pergunta genérica sem cache: roteador 3b (evita llama3.1:8b / qwen 7b em CPU).
+    if (
+        req.usar_web is not True
+        and cache_svc.eh_pergunta_generica(req.prompt)
+        and req.categoria not in ("programacao", "imagem")
+    ):
+        cat_rapida: Categoria = req.categoria or "educacao"  # type: ignore[assignment]
+        t = time.perf_counter()
+        resposta, modelo = await cache_svc.responder_pergunta_generica(
+            req.prompt, tipo, bloco_ctx, cat_rapida
+        )
+        timings["generico_rapido_s"] = round(time.perf_counter() - t, 2)
+        sessao_id = await _persistir_sessao(
+            req, token_id, resposta, cat_rapida, modelo, []
+        )
+        await cache_svc.salvar(
+            req.prompt, resposta, cat_rapida, modelo, False, [], token_id=token_id
+        )
+        _extrair_contexto_em_background(token_id, req.prompt, tipo)
+        timings["total_s"] = round(time.perf_counter() - t0, 2)
+        logger.info(
+            "POST /chat genérico rápido modelo=%s | tempos=%s", modelo, timings
+        )
+        return ChatResponse(
+            categoria=cat_rapida,
+            modelo=modelo,
+            resposta=resposta,
+            motivo_roteamento=f"Pergunta factual via {modelo} (atalho rápido).",
+            usar_web=False,
+            motivo_web="Conteúdo estável: web não utilizada.",
+            fontes=[],
+            sessao_id=sessao_id,
+            cache_hit=False,
+            motivo_cache="Primeira resposta; salva no cache compartilhado.",
+            tipo_usuario=tipo,
+        )
 
     # --- Fluxo normal ---
     if req.categoria:
@@ -284,7 +336,10 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
 
     t = time.perf_counter()
     resposta = await ollama.chat(
-        model=modelo, messages=messages, temperature=req.temperature, exclusivo=True
+        model=modelo,
+        messages=messages,
+        temperature=req.temperature,
+        exclusivo=_modelo_pesado(modelo),
     )
     timings["ollama_s"] = round(time.perf_counter() - t, 2)
 
@@ -300,7 +355,7 @@ async def chat(req: ChatRequest, token=Depends(require_token)):
         )
         timings["salvar_s"] = round(time.perf_counter() - t, 2)
 
-    await _extrair_contexto(token_id, req.prompt, tipo)
+    _extrair_contexto_em_background(token_id, req.prompt, tipo)
 
     if await _pode_usar_cache(req) and not usar_web_efetivo:
         await cache_svc.salvar(

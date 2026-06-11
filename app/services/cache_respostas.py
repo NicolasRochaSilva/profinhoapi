@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -131,6 +132,31 @@ def _cosine(a: list[float], b: list[float]) -> float:
     va, vb = np.array(a, dtype=np.float32), np.array(b, dtype=np.float32)
     denom = float(np.linalg.norm(va) * np.linalg.norm(vb)) + 1e-9
     return float(np.dot(va, vb) / denom)
+
+
+async def responder_pergunta_generica(
+    prompt: str,
+    tipo_usuario: str,
+    contexto_token: str = "",
+    categoria: str = "educacao",
+) -> tuple[str, str]:
+    """Perguntas factuais ('o que é…') via roteador 3b — muito mais rápido que 8b/7b."""
+    from app.services.perfil_usuario import system_prompt
+
+    modelo = settings.model_router
+    ctx = f"\n\n{contexto_token}" if contexto_token else ""
+    resposta = await ollama.generate(
+        model=modelo,
+        system=system_prompt(categoria, tipo_usuario),
+        prompt=(
+            f"Pergunta: {prompt[:2000]}{ctx}\n\n"
+            "Responda de forma clara, didática e objetiva em português do Brasil."
+        ),
+        temperature=0.5,
+        options={"num_predict": settings.chat_num_predict_rapido},
+        exclusivo=False,
+    )
+    return resposta, modelo
 
 
 async def responder_saudacao(
@@ -375,7 +401,13 @@ async def buscar(
             return hit
 
     try:
-        vetor = await embeddings.embed_texto(prompt)
+        vetor = await asyncio.wait_for(
+            embeddings.embed_texto(prompt),
+            timeout=45.0,
+        )
+    except TimeoutError:
+        logger.warning("Timeout no embedding; cache semântico ignorado.")
+        return None
     except Exception as exc:  # noqa: BLE001
         logger.warning("Embedding falhou; cache semântico ignorado: %s", exc)
         return None

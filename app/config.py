@@ -31,12 +31,21 @@ class Settings(BaseSettings):
     # descarrega os outros modelos de trabalho que estiverem carregados.
     ollama_modelo_unico: bool = True
 
-    # Modelos
+    # --- Modelos (um por finalidade) ---
+    # Config anterior (pesada — descomente os defaults abaixo e comente a config atual):
+    # model_light: str = "llama3.2:1b"
+    # model_router: str = "llama3.2:3b"
+    # model_chat: str = "llama3.1:8b"
+    # model_code: str = "qwen2.5-coder:7b"
+    # model_edu: str = "qwen2.5:7b"
+    # model_vision: str = "qwen2.5vl:7b"
+    #
+    # Config atual (leve / velocidade em CPU):
     model_light: str = "llama3.2:1b"
-    model_router: str = "llama3.2:3b"
-    model_chat: str = "llama3.1:8b"
-    model_code: str = "qwen2.5-coder:7b"
-    model_edu: str = "qwen2.5:7b"
+    model_router: str = "qwen2.5:1.5b"
+    model_chat: str = "phi3:mini"
+    model_code: str = "deepseek-coder:1.3b"
+    model_edu: str = "phi3:mini"
     model_vision: str = "qwen2.5vl:7b"
 
     # PostgreSQL
@@ -60,7 +69,11 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
     cache_similaridade_min: float = 0.88
     cache_reformat_min: float = 0.95
-    cache_max_candidatos: int = 300
+    cache_max_candidatos: int = 100
+
+    # Limite de tokens gerados (evita respostas infinitas em CPU).
+    chat_num_predict: int = 2048
+    chat_num_predict_rapido: int = 1200
 
     # Extração automática de contexto por token (modelo leve)
     context_extract_enabled: bool = True
@@ -87,7 +100,7 @@ class Settings(BaseSettings):
 
     @property
     def modelos_trabalho(self) -> list[str]:
-        """Modelos pesados (7-8B). O roteador 3b é leve e fica de fora."""
+        """Modelos de inferência principal + visão (para modo modelo-único)."""
         return [self.model_chat, self.model_code, self.model_edu, self.model_vision]
 
     @property
