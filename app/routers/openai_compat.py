@@ -121,19 +121,27 @@ async def chat_completions(req: OpenAIChatRequest, token=Depends(require_token))
 
     if req.stream:
         async def gerar():
-            texto = await ollama.chat(
-                model=modelo, messages=messages, temperature=req.temperature, exclusivo=True
-            )
-            chunk = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": criado,
-                "model": modelo,
-                "choices": [
-                    {"index": 0, "delta": {"role": "assistant", "content": texto}, "finish_reason": None}
-                ],
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
+            enviou_role = False
+            async for pedaco in ollama.chat_stream(
+                model=modelo,
+                messages=messages,
+                temperature=req.temperature,
+                exclusivo=True,
+            ):
+                delta: dict[str, str] = {"content": pedaco}
+                if not enviou_role:
+                    delta["role"] = "assistant"
+                    enviou_role = True
+                chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": criado,
+                    "model": modelo,
+                    "choices": [
+                        {"index": 0, "delta": delta, "finish_reason": None}
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
             final = {
                 "id": completion_id,
                 "object": "chat.completion.chunk",
@@ -144,7 +152,11 @@ async def chat_completions(req: OpenAIChatRequest, token=Depends(require_token))
             yield f"data: {json.dumps(final)}\n\n"
             yield "data: [DONE]\n\n"
 
-        return StreamingResponse(gerar(), media_type="text/event-stream")
+        return StreamingResponse(
+            gerar(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     texto = await ollama.chat(
         model=modelo, messages=messages, temperature=req.temperature, exclusivo=True

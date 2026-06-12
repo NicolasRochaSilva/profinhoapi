@@ -8,7 +8,9 @@ Gerencia também o uso de RAM:
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any, Optional, Union
 
 import httpx
@@ -121,6 +123,80 @@ class OllamaClient:
             resp.raise_for_status()
             data = resp.json()
         return data.get("message", {}).get("content", "")
+
+    async def chat_stream(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.7,
+        options: Optional[dict[str, Any]] = None,
+        exclusivo: bool = False,
+        keep_alive: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """Chat com streaming token a token (endpoint /api/chat, stream=true)."""
+        if exclusivo:
+            await self.garantir_unico(model)
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "keep_alive": self._format_keep_alive(self._resolve_keep_alive(model, keep_alive)),
+            "options": {
+                "temperature": temperature,
+                "num_predict": settings.chat_num_predict,
+                **(options or {}),
+            },
+        }
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST", f"{self.base_url}/api/chat", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    parte = (data.get("message") or {}).get("content") or ""
+                    if parte:
+                        yield parte
+
+    async def generate_stream(
+        self,
+        model: str,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: float = 0.7,
+        options: Optional[dict[str, Any]] = None,
+        exclusivo: bool = False,
+        keep_alive: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """Geração com streaming (endpoint /api/generate, stream=true)."""
+        if exclusivo:
+            await self.garantir_unico(model)
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "stream": True,
+            "keep_alive": self._format_keep_alive(self._resolve_keep_alive(model, keep_alive)),
+            "options": {"temperature": temperature, **(options or {})},
+        }
+        if system:
+            payload["system"] = system
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST", f"{self.base_url}/api/generate", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    parte = data.get("response") or ""
+                    if parte:
+                        yield parte
 
     async def list_models(self) -> list[str]:
         try:

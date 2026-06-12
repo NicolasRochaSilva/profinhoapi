@@ -36,6 +36,10 @@ class ChatRequest(BaseModel):
         description="ID da sessão/conversa. Se vazio, uma nova é criada e devolvida na resposta.",
     )
     salvar: bool = Field(True, description="Se true, salva a conversa na memória (banco).")
+    stream: bool = Field(
+        False,
+        description="Se true, resposta em SSE (eventos meta, token, done) em tempo real.",
+    )
 
 
 class ChatResponse(BaseModel):

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Profinho API",
-    "description": "Collection da **Profinho API** — IA educacional multi-modelo (Ollama) com roteador, visão, pesquisa web, agente e memória.\n\n**Configuração:**\n1. `baseUrl` — ex.: `https://profinhoapi.youteach.com.br` ou `http://localhost:7000`\n2. `token` — Bearer = **SHA-256 hex** gravado em `tokens.token` (demo: `d2b48181af2062762f8d48d83effdf09b16ec31fa3c54eb078f48bfc74d75576`)\n3. Pasta *Status* = sem auth; demais = Bearer `{{token}}`\n4. Antes de testar chat: execute **Ollama → Pré-aquecer 4 modelos** (pode levar minutos)\n\nDocumentação: `docs/FUNCIONALIDADES.md` | Swagger: `{{baseUrl}}/docs`",
+    "description": "Collection da **Profinho API** — IA educacional multi-modelo (Ollama) com roteador, visão, pesquisa web, agente e memória.\n\n**Configuração:**\n1. `baseUrl` — ex.: `https://profinhoapi.youteach.com.br` ou `http://localhost:7000`\n2. `token` — Bearer = **SHA-256 hex** gravado em `tokens.token`\n3. Pasta *Status* = sem auth; demais = Bearer `{{token}}`\n4. Antes de testar chat: **Ollama → Pré-aquecer modelos quentes**\n\n**Streaming:** pasta *Chat → Stream (SSE)* ou `/v1` com `\"stream\": true`. Eventos: `meta` → `token` (pedaços) → `done` (resposta completa + `sessao_id`).\n\nDocumentação: `docs/FUNCIONALIDADES.md` | Swagger: `{{baseUrl}}/docs`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -38,6 +38,11 @@
     },
     {
       "key": "memoria_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "stream_text",
       "value": "",
       "type": "string"
     }
@@ -81,15 +86,15 @@
     },
     {
       "name": "Ollama (RAM)",
-      "description": "Gerenciamento de modelos na RAM. Modelos quentes (não descarregam via unload): llama3.2:3b, llama3.1:8b, qwen2.5-coder:7b, qwen2.5:7b.",
+      "description": "Gerenciamento de modelos na RAM. Modelos quentes (config atual): llama3.2:1b, qwen2.5:1.5b, phi3:mini, deepseek-coder:1.3b.",
       "item": [
         {
-          "name": "Pré-aquecer 4 modelos quentes",
+          "name": "Pré-aquecer modelos quentes",
           "request": {
             "method": "POST",
             "header": [],
             "url": "{{baseUrl}}/ollama/preload",
-            "description": "Carrega na RAM: llama3.2:3b (roteador), llama3.1:8b (chat), qwen2.5-coder:7b, qwen2.5:7b. Pode levar vários minutos. Usa OLLAMA_QUENTES_KEEP_ALIVE (padrão -1 = Forever)."
+            "description": "Carrega na RAM os modelos quentes do `.env` (light, router, chat, code, edu). Pode levar alguns minutos."
           }
         },
         {
@@ -107,7 +112,7 @@
             "method": "POST",
             "header": [],
             "url": "{{baseUrl}}/ollama/unload",
-            "description": "Descarrega modelos da RAM. Os 4 modelos quentes são protegidos e não são descarregados."
+            "description": "Descarrega modelos da RAM. Modelos quentes configurados são protegidos."
           }
         },
         {
@@ -116,13 +121,13 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/ollama/unload?model=llama3.1:8b",
+              "raw": "{{baseUrl}}/ollama/unload?model=phi3:mini",
               "host": ["{{baseUrl}}"],
               "path": ["ollama", "unload"],
               "query": [
                 {
                   "key": "model",
-                  "value": "llama3.1:8b",
+                  "value": "phi3:mini",
                   "description": "Nome do modelo Ollama"
                 }
               ]
@@ -176,7 +181,7 @@
               "raw": "{\n  \"prompt\": \"olá\",\n  \"categoria\": \"chat\",\n  \"temperature\": 0.7,\n  \"usar_web\": false,\n  \"salvar\": true\n}"
             },
             "url": "{{baseUrl}}/chat",
-            "description": "Saudação rápida: força chat, sem web, sem roteador. Pré-aqueça os modelos antes."
+            "description": "Resposta JSON completa. Para streaming use a pasta *Chat → Stream (SSE)* ou `\"stream\": true`."
           }
         },
         {
@@ -279,6 +284,255 @@
             },
             "url": "{{baseUrl}}/chat"
           }
+        },
+        {
+          "name": "Stream (SSE)",
+          "description": "Respostas em tempo real via **Server-Sent Events** (`text/event-stream`).\n\nEnvie `\"stream\": true` no body. Eventos:\n- `meta` — modelo, categoria, cache_hit, tipo_usuario\n- `token` — `{\"content\": \"...\"}` (texto chegando)\n- `done` — resposta completa + `sessao_id`\n\nNo Postman, use **Send** e veja a resposta bruta na aba Body; o script Tests acumula o texto em `{{stream_text}}`.",
+          "item": [
+            {
+              "name": "Chat stream — olá",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "function parseSseProfinho(text) {",
+                      "    let accumulated = \"\";",
+                      "    let donePayload = null;",
+                      "    for (const block of text.split(/\\n\\n+/)) {",
+                      "        if (!block.trim()) continue;",
+                      "        const eventMatch = block.match(/^event:\\s*(\\w+)/m);",
+                      "        const dataMatch = block.match(/^data:\\s*(.+)$/m);",
+                      "        if (!eventMatch || !dataMatch) continue;",
+                      "        try {",
+                      "            const payload = JSON.parse(dataMatch[1]);",
+                      "            if (eventMatch[1] === \"token\" && payload.content) accumulated += payload.content;",
+                      "            if (eventMatch[1] === \"done\") donePayload = payload;",
+                      "        } catch (e) {}",
+                      "    }",
+                      "    return { accumulated, donePayload };",
+                      "}",
+                      "if (pm.response.code === 200) {",
+                      "    const { accumulated, donePayload } = parseSseProfinho(pm.response.text());",
+                      "    pm.collectionVariables.set(\"stream_text\", accumulated);",
+                      "    if (donePayload && donePayload.sessao_id) pm.collectionVariables.set(\"sessao_id\", donePayload.sessao_id);",
+                      "    pm.test(\"SSE content-type\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/event-stream\"));",
+                      "    pm.test(\"Tokens recebidos\", () => pm.expect(accumulated.length).to.be.above(0));",
+                      "    pm.test(\"Evento done\", () => pm.expect(donePayload).to.not.be.null);",
+                      "    console.log(\"Resposta stream:\", accumulated);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Accept", "value": "text/event-stream" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"prompt\": \"olá\",\n  \"stream\": true,\n  \"categoria\": \"chat\",\n  \"temperature\": 0.7,\n  \"usar_web\": false,\n  \"salvar\": true\n}"
+                },
+                "url": "{{baseUrl}}/chat",
+                "description": "Saudação com streaming token a token (modelo light)."
+              }
+            },
+            {
+              "name": "Chat stream — o que é verbo to be",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "function parseSseProfinho(text) {",
+                      "    let accumulated = \"\";",
+                      "    let donePayload = null;",
+                      "    for (const block of text.split(/\\n\\n+/)) {",
+                      "        if (!block.trim()) continue;",
+                      "        const eventMatch = block.match(/^event:\\s*(\\w+)/m);",
+                      "        const dataMatch = block.match(/^data:\\s*(.+)$/m);",
+                      "        if (!eventMatch || !dataMatch) continue;",
+                      "        try {",
+                      "            const payload = JSON.parse(dataMatch[1]);",
+                      "            if (eventMatch[1] === \"token\" && payload.content) accumulated += payload.content;",
+                      "            if (eventMatch[1] === \"done\") donePayload = payload;",
+                      "        } catch (e) {}",
+                      "    }",
+                      "    return { accumulated, donePayload };",
+                      "}",
+                      "if (pm.response.code === 200) {",
+                      "    const { accumulated, donePayload } = parseSseProfinho(pm.response.text());",
+                      "    pm.collectionVariables.set(\"stream_text\", accumulated);",
+                      "    if (donePayload && donePayload.sessao_id) pm.collectionVariables.set(\"sessao_id\", donePayload.sessao_id);",
+                      "    pm.test(\"Tokens recebidos\", () => pm.expect(accumulated.length).to.be.above(0));",
+                      "    console.log(\"Modelo:\", donePayload && donePayload.modelo);",
+                      "    console.log(\"Resposta:\", accumulated);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Accept", "value": "text/event-stream" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"prompt\": \"o que é o verbo to be?\",\n  \"stream\": true,\n  \"temperature\": 0.7,\n  \"usar_web\": false,\n  \"salvar\": true\n}"
+                },
+                "url": "{{baseUrl}}/chat",
+                "description": "Pergunta factual genérica — atalho rápido + streaming."
+              }
+            },
+            {
+              "name": "Chat stream — fotossíntese",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "function parseSseProfinho(text) {",
+                      "    let accumulated = \"\";",
+                      "    let donePayload = null;",
+                      "    for (const block of text.split(/\\n\\n+/)) {",
+                      "        if (!block.trim()) continue;",
+                      "        const eventMatch = block.match(/^event:\\s*(\\w+)/m);",
+                      "        const dataMatch = block.match(/^data:\\s*(.+)$/m);",
+                      "        if (!eventMatch || !dataMatch) continue;",
+                      "        try {",
+                      "            const payload = JSON.parse(dataMatch[1]);",
+                      "            if (eventMatch[1] === \"token\" && payload.content) accumulated += payload.content;",
+                      "            if (eventMatch[1] === \"done\") donePayload = payload;",
+                      "        } catch (e) {}",
+                      "    }",
+                      "    return { accumulated, donePayload };",
+                      "}",
+                      "if (pm.response.code === 200) {",
+                      "    const { accumulated, donePayload } = parseSseProfinho(pm.response.text());",
+                      "    pm.collectionVariables.set(\"stream_text\", accumulated);",
+                      "    if (donePayload && donePayload.sessao_id) pm.collectionVariables.set(\"sessao_id\", donePayload.sessao_id);",
+                      "    pm.test(\"cache_hit no done\", () => { if (donePayload) console.log(\"cache_hit:\", donePayload.cache_hit); });",
+                      "    console.log(\"Resposta:\", accumulated.slice(0, 800));",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Accept", "value": "text/event-stream" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"prompt\": \"Explique o que é fotossíntese de forma simples para alunos do 6º ano\",\n  \"stream\": true,\n  \"temperature\": 0.7,\n  \"usar_web\": false,\n  \"salvar\": true\n}"
+                },
+                "url": "{{baseUrl}}/chat"
+              }
+            },
+            {
+              "name": "Chat stream — continuar sessão",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "function parseSseProfinho(text) {",
+                      "    let accumulated = \"\";",
+                      "    let donePayload = null;",
+                      "    for (const block of text.split(/\\n\\n+/)) {",
+                      "        if (!block.trim()) continue;",
+                      "        const eventMatch = block.match(/^event:\\s*(\\w+)/m);",
+                      "        const dataMatch = block.match(/^data:\\s*(.+)$/m);",
+                      "        if (!eventMatch || !dataMatch) continue;",
+                      "        try {",
+                      "            const payload = JSON.parse(dataMatch[1]);",
+                      "            if (eventMatch[1] === \"token\" && payload.content) accumulated += payload.content;",
+                      "            if (eventMatch[1] === \"done\") donePayload = payload;",
+                      "        } catch (e) {}",
+                      "    }",
+                      "    return { accumulated, donePayload };",
+                      "}",
+                      "if (pm.response.code === 200) {",
+                      "    const { accumulated, donePayload } = parseSseProfinho(pm.response.text());",
+                      "    pm.collectionVariables.set(\"stream_text\", accumulated);",
+                      "    console.log(\"Resposta:\", accumulated);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Accept", "value": "text/event-stream" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"prompt\": \"Agora gere 3 exercícios sobre o mesmo tema\",\n  \"stream\": true,\n  \"sessao_id\": \"{{sessao_id}}\",\n  \"salvar\": true\n}"
+                },
+                "url": "{{baseUrl}}/chat",
+                "description": "Continua conversa com histórico da sessão (`{{sessao_id}}`)."
+              }
+            },
+            {
+              "name": "Chat stream — programação",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "function parseSseProfinho(text) {",
+                      "    let accumulated = \"\";",
+                      "    let donePayload = null;",
+                      "    for (const block of text.split(/\\n\\n+/)) {",
+                      "        if (!block.trim()) continue;",
+                      "        const eventMatch = block.match(/^event:\\s*(\\w+)/m);",
+                      "        const dataMatch = block.match(/^data:\\s*(.+)$/m);",
+                      "        if (!eventMatch || !dataMatch) continue;",
+                      "        try {",
+                      "            const payload = JSON.parse(dataMatch[1]);",
+                      "            if (eventMatch[1] === \"token\" && payload.content) accumulated += payload.content;",
+                      "            if (eventMatch[1] === \"done\") donePayload = payload;",
+                      "        } catch (e) {}",
+                      "    }",
+                      "    return { accumulated, donePayload };",
+                      "}",
+                      "if (pm.response.code === 200) {",
+                      "    const { accumulated, donePayload } = parseSseProfinho(pm.response.text());",
+                      "    pm.collectionVariables.set(\"stream_text\", accumulated);",
+                      "    console.log(\"Categoria:\", donePayload && donePayload.categoria);",
+                      "    console.log(\"Resposta:\", accumulated);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Accept", "value": "text/event-stream" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"prompt\": \"Escreva uma função Python que valida CPF com comentários\",\n  \"stream\": true,\n  \"categoria\": \"programacao\",\n  \"temperature\": 0.3,\n  \"usar_web\": false,\n  \"salvar\": true\n}"
+                },
+                "url": "{{baseUrl}}/chat"
+              }
+            }
+          ]
         }
       ]
     },
@@ -689,17 +943,86 @@
         },
         {
           "name": "Chat completions (stream)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    let accumulated = \"\";",
+                  "    const lines = pm.response.text().split(\"\\n\");",
+                  "    for (const line of lines) {",
+                  "        if (!line.startsWith(\"data: \")) continue;",
+                  "        const raw = line.slice(6).trim();",
+                  "        if (raw === \"[DONE]\") break;",
+                  "        try {",
+                  "            const chunk = JSON.parse(raw);",
+                  "            const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;",
+                  "            if (delta && delta.content) accumulated += delta.content;",
+                  "        } catch (e) {}",
+                  "    }",
+                  "    pm.collectionVariables.set(\"stream_text\", accumulated);",
+                  "    pm.test(\"SSE OpenAI\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/event-stream\"));",
+                  "    pm.test(\"Tokens recebidos\", () => pm.expect(accumulated.length).to.be.above(0));",
+                  "    console.log(\"OpenAI stream:\", accumulated);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "text/event-stream" }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"model\": \"profinho-chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Olá, quem é você?\" }\n  ],\n  \"stream\": true\n}"
             },
             "url": "{{baseUrl}}/v1/chat/completions",
-            "description": "Resposta SSE (`text/event-stream`)."
+            "description": "Formato OpenAI SSE: `data: {...}` com `delta.content` token a token. Acumula em `{{stream_text}}`."
+          }
+        },
+        {
+          "name": "Chat completions (stream — coder)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    let accumulated = \"\";",
+                  "    pm.response.text().split(\"\\n\").forEach(line => {",
+                  "        if (!line.startsWith(\"data: \")) return;",
+                  "        const raw = line.slice(6).trim();",
+                  "        if (raw === \"[DONE]\") return;",
+                  "        try {",
+                  "            const c = JSON.parse(raw);",
+                  "            const d = c.choices && c.choices[0] && c.choices[0].delta;",
+                  "            if (d && d.content) accumulated += d.content;",
+                  "        } catch (e) {}",
+                  "    });",
+                  "    pm.collectionVariables.set(\"stream_text\", accumulated);",
+                  "    console.log(accumulated);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "text/event-stream" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"profinho-coder\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Função Python que soma dois números\" }\n  ],\n  \"stream\": true,\n  \"temperature\": 0.2\n}"
+            },
+            "url": "{{baseUrl}}/v1/chat/completions"
           }
         }
       ]

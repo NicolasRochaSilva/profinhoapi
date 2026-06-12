@@ -159,6 +159,30 @@ async def responder_pergunta_generica(
     return resposta, modelo
 
 
+async def iter_pergunta_generica(
+    prompt: str,
+    tipo_usuario: str,
+    contexto_token: str = "",
+    categoria: str = "educacao",
+):
+    from app.services.perfil_usuario import system_prompt
+
+    modelo = settings.model_router
+    ctx = f"\n\n{contexto_token}" if contexto_token else ""
+    async for parte in ollama.generate_stream(
+        model=modelo,
+        system=system_prompt(categoria, tipo_usuario),
+        prompt=(
+            f"Pergunta: {prompt[:2000]}{ctx}\n\n"
+            "Responda de forma clara, didática e objetiva em português do Brasil."
+        ),
+        temperature=0.5,
+        options={"num_predict": settings.chat_num_predict_rapido},
+        exclusivo=False,
+    ):
+        yield parte
+
+
 async def responder_saudacao(
     prompt: str, contexto_token: str = "", tipo_usuario: str = "professor"
 ) -> str:
@@ -178,6 +202,28 @@ async def responder_saudacao(
         temperature=0.4,
         options={"num_predict": 120},
     )
+
+
+async def iter_saudacao(
+    prompt: str, contexto_token: str = "", tipo_usuario: str = "professor"
+):
+    from app.services.perfil_usuario import instrucao_saudacao
+
+    ctx = f"\n\n{contexto_token}" if contexto_token else ""
+    async for parte in ollama.generate_stream(
+        model=settings.model_light,
+        prompt=(
+            f"{instrucao_saudacao(tipo_usuario)} "
+            f"O usuário disse: \"{prompt[:200]}\""
+            f"{ctx}\n"
+            "Responda em português do Brasil. "
+            "Se souber o nome do usuário pelo contexto, use-o."
+        ),
+        temperature=0.4,
+        options={"num_predict": 120},
+        exclusivo=False,
+    ):
+        yield parte
 
 
 async def adaptar_resposta_cache(
