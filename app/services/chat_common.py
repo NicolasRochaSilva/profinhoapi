@@ -17,6 +17,8 @@ async def pode_usar_cache(req: ChatRequest) -> bool:
         return False
     if perfil.eh_pedido_piada(req.prompt):
         return False
+    if perfil.eh_pergunta_identidade(req.prompt):
+        return False
     if req.usar_web is True:
         return False
     if req.categoria == "imagem":

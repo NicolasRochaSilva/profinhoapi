@@ -117,6 +117,31 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
             tipo_usuario=tipo,
         )
 
+    if perfil.eh_pergunta_identidade(req.prompt):
+        t = time.perf_counter()
+        resposta, modelo = await cache_svc.responder_identidade(req.prompt, tipo)
+        timings["identidade_s"] = round(time.perf_counter() - t, 2)
+        categoria = req.categoria or "chat"  # type: ignore[assignment]
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta, categoria, modelo, []
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        timings["total_s"] = round(time.perf_counter() - t0, 2)
+        logger.info("POST /chat identidade | token=%s | tempos=%s", token_id, timings)
+        return ChatResponse(
+            categoria=categoria,
+            modelo=modelo,
+            resposta=resposta,
+            motivo_roteamento="Apresentação do Profinho (quem é você).",
+            usar_web=False,
+            motivo_web="Pergunta de identidade; sem web.",
+            fontes=[],
+            sessao_id=sessao_id,
+            cache_hit=False,
+            motivo_cache=None,
+            tipo_usuario=tipo,
+        )
+
     if perfil.eh_piada_generica(req.prompt):
         t = time.perf_counter()
         resposta, modelo = await cache_svc.responder_piada_generica(req.prompt, tipo)
@@ -135,6 +160,31 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
             motivo_roteamento="Piada inocente livre (sem tema) via Profinho.",
             usar_web=False,
             motivo_web="Humor leve; sem busca na web.",
+            fontes=[],
+            sessao_id=sessao_id,
+            cache_hit=False,
+            motivo_cache=None,
+            tipo_usuario=tipo,
+        )
+
+    if perfil.eh_pedido_piada_conteudo(req.prompt):
+        t = time.perf_counter()
+        resposta, modelo = await cache_svc.responder_piada_conteudo(req.prompt, tipo)
+        timings["piada_tema_s"] = round(time.perf_counter() - t, 2)
+        categoria = req.categoria or "educacao"  # type: ignore[assignment]
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta, categoria, modelo, []
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        timings["total_s"] = round(time.perf_counter() - t0, 2)
+        logger.info("POST /chat piada sobre tema | token=%s | tempos=%s", token_id, timings)
+        return ChatResponse(
+            categoria=categoria,
+            modelo=modelo,
+            resposta=resposta,
+            motivo_roteamento="Piadas inocentes sobre o tema pedido (Profinho).",
+            usar_web=False,
+            motivo_web="Humor sobre conteúdo; sem web.",
             fontes=[],
             sessao_id=sessao_id,
             cache_hit=False,

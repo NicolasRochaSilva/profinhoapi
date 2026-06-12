@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Literal
 
 TipoUsuario = Literal["professor", "aluno"]
@@ -40,11 +41,12 @@ _RE_PEDIDO_PIADA = re.compile(
 )
 
 MODO_PIADA_REGRA = (
-    "MODO PIADA SOBRE CONTEÚDO (humor ligado a um tema): "
-    "inclua de 2 a 4 piadas INOCENTES sobre o assunto — trocadilhos, analogias "
-    "escolares leves, jogos de palavras. Pode explicar o conteúdo brevemente. "
-    "PROIBIDO: sexual, religioso, político, violento ou sarcasmo pesado. "
-    "Até ~12 linhas."
+    "MODO PIADA SOBRE CONTEÚDO: conte APENAS 2 ou 3 piadas INOCENTES sobre o tema "
+    "(trocadilhos, jogos de palavras, situações escolares leves). "
+    "Pode usar 1 frase introdutória curta e 1 de fechamento. "
+    "PROIBIDO: aula, listas explicativas, tópicos numerados de estudo, seções tipo "
+    "'Troca de ideias', markdown com ---, emojis em excesso, inglês, sexual, "
+    "religioso, político ou violento. Máximo 10 linhas no total."
 )
 
 MODO_PIADA_LIVRE = (
@@ -130,6 +132,77 @@ def normalizar_tipo(valor: str | None) -> TipoUsuario:
     return "aluno" if t == "aluno" else "professor"
 
 
+def _normalizar_texto_curto(texto: str) -> str:
+    t = unicodedata.normalize("NFD", texto.strip().lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    t = re.sub(r"[^\w\s]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+_IDENTIDADE_EXATAS = frozenset(
+    {
+        "quem e voce",
+        "quem e vc",
+        "o que e voce",
+        "o que e vc",
+        "quem e o profinho",
+        "o que e o profinho",
+        "o que e profinho",
+        "quem e profinho",
+        "se apresente",
+        "apresente se",
+        "fale sobre voce",
+        "fale de voce",
+        "me apresente o profinho",
+    }
+)
+
+
+def eh_pergunta_identidade(texto: str) -> bool:
+    """Pergunta sobre quem/o que é o Profinho (ex.: 'quem é você')."""
+    if not texto or len(texto.strip()) > 90:
+        return False
+    norm = _normalizar_texto_curto(texto)
+    if norm in _IDENTIDADE_EXATAS:
+        return True
+    return bool(
+        re.match(
+            r"^(?:"
+            r"quem\s+(?:e|eh)\s+(?:voce|vc|o\s+profinho|profinho)"
+            r"|o\s+que\s+(?:e|eh)\s+(?:voce|vc|o\s+profinho|profinho)"
+            r"|(?:se\s+)?apresent[ae]"
+            r"|fale\s+(?:sobre\s+)?(?:voce|de\s+si)"
+            r"|(?:me\s+)?(?:conta|conte)\s+(?:quem|sobre)\s+(?:e|eh)\s+"
+            r"(?:voce|vc|profinho)"
+            r")\s*$",
+            norm,
+        )
+    )
+
+
+def instrucao_identidade(tipo_usuario: str) -> str:
+    tipo = normalizar_tipo(tipo_usuario)
+    if tipo == "aluno":
+        return (
+            f"{_PERSONALIDADE} "
+            "O aluno perguntou QUEM VOCÊ É. "
+            "Responda SOMENTE com apresentação curta (máximo 4 frases): "
+            "você é o Profinho, livrinho educativo que ajuda alunos a aprender "
+            "com explicações claras, bom humor leve e paciência. "
+            "PROIBIDO: outros nomes ('Professor Profinho'), exercícios, templates de "
+            "aula, inglês, outras perguntas ou conteúdo aleatório (ex.: raiz quadrada)."
+        )
+    return (
+        f"{_PERSONALIDADE} "
+        "O professor perguntou QUEM VOCÊ É. "
+        "Responda SOMENTE com apresentação curta (máximo 4 frases): "
+        "você é o Profinho, livrinho educativo que apoia professores e alunos "
+        "com ideias de aula, exercícios, explicações e bom humor leve. "
+        "PROIBIDO: outros nomes ('Professor Profinho'), exercícios, templates, "
+        "inglês, outras perguntas ou conteúdo aleatório."
+    )
+
+
 def eh_pedido_piada(texto: str) -> bool:
     """Usuário pediu piada/humor (com ou sem tema)."""
     if not texto or not texto.strip():
@@ -161,6 +234,17 @@ def instrucao_piada_generica(tipo_usuario: str) -> str:
         f"{_PERSONALIDADE} "
         f"O {publico} pediu uma piada inocente qualquer — sem tema obrigatório. "
         f"{MODO_PIADA_LIVRE}"
+    )
+
+
+def instrucao_piada_conteudo(tipo_usuario: str) -> str:
+    tipo = normalizar_tipo(tipo_usuario)
+    publico = "aluno" if tipo == "aluno" else "professor"
+    return (
+        f"{_PERSONALIDADE} "
+        f"O {publico} pediu piadas SOBRE UM TEMA ESPECÍFICO. {MODO_PIADA_REGRA} "
+        "Responda SOMENTE com piadas sobre o tema pedido. "
+        "Não dê aula nem explique o conteúdo em detalhe — só humor inocente ligado ao assunto."
     )
 
 

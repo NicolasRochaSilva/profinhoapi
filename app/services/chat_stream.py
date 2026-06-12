@@ -97,6 +97,34 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
         logger.info("POST /chat stream saudação | %.2fs", time.perf_counter() - t0)
         return
 
+    if perfil.eh_pergunta_identidade(req.prompt):
+        categoria = req.categoria or "chat"  # type: ignore[assignment]
+        modelo = settings.model_light
+        meta = _meta_base(
+            tipo,
+            categoria=categoria,
+            modelo=modelo,
+            motivo_roteamento="Apresentação do Profinho (quem é você).",
+            usar_web=False,
+            motivo_web="Pergunta de identidade; sem web.",
+            fontes=[],
+            cache_hit=False,
+            motivo_cache=None,
+        )
+        partes = []
+        yield sse_event("meta", meta)
+        async for pedaco in cache_svc.iter_identidade(req.prompt, tipo):
+            partes.append(pedaco)
+            yield sse_event("token", {"content": pedaco})
+        resposta = "".join(partes)
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta, categoria, modelo, []
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})
+        logger.info("POST /chat stream identidade | %.2fs", time.perf_counter() - t0)
+        return
+
     if perfil.eh_piada_generica(req.prompt):
         categoria = req.categoria or "chat"  # type: ignore[assignment]
         meta = _meta_base(
@@ -122,6 +150,33 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
         common.extrair_contexto_em_background(token_id, req.prompt, tipo)
         yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})
         logger.info("POST /chat stream piada genérica | %.2fs", time.perf_counter() - t0)
+        return
+
+    if perfil.eh_pedido_piada_conteudo(req.prompt):
+        categoria = req.categoria or "educacao"  # type: ignore[assignment]
+        meta = _meta_base(
+            tipo,
+            categoria=categoria,
+            modelo=settings.model_chat,
+            motivo_roteamento="Piadas inocentes sobre o tema pedido (Profinho).",
+            usar_web=False,
+            motivo_web="Humor sobre conteúdo; sem web.",
+            fontes=[],
+            cache_hit=False,
+            motivo_cache=None,
+        )
+        partes = []
+        yield sse_event("meta", meta)
+        async for pedaco in cache_svc.iter_piada_conteudo(req.prompt, tipo):
+            partes.append(pedaco)
+            yield sse_event("token", {"content": pedaco})
+        resposta = "".join(partes)
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta, categoria, settings.model_chat, []
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})
+        logger.info("POST /chat stream piada sobre tema | %.2fs", time.perf_counter() - t0)
         return
 
     if ctx_svc.eh_consulta_pessoal(req.prompt):
