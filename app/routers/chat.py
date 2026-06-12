@@ -18,7 +18,7 @@ from app.services import cache_respostas as cache_svc
 from app.services import chat_common as common
 from app.services import chat_stream
 from app.services import contexto_usuario as ctx_svc
-from app.services import crawl4ai, memoria, moderacao, perfil_usuario as perfil, searxng
+from app.services import crawl4ai, exercicio_interativo as exercicio_svc, memoria, moderacao, perfil_usuario as perfil, searxng
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger("profinho.chat")
@@ -117,6 +117,31 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
             tipo_usuario=tipo,
         )
 
+    if perfil.eh_piada_generica(req.prompt):
+        t = time.perf_counter()
+        resposta, modelo = await cache_svc.responder_piada_generica(req.prompt, tipo)
+        timings["piada_generica_s"] = round(time.perf_counter() - t, 2)
+        categoria = req.categoria or "chat"  # type: ignore[assignment]
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta, categoria, modelo, []
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        timings["total_s"] = round(time.perf_counter() - t0, 2)
+        logger.info("POST /chat piada genérica | token=%s | tempos=%s", token_id, timings)
+        return ChatResponse(
+            categoria=categoria,
+            modelo=modelo,
+            resposta=resposta,
+            motivo_roteamento="Piada inocente livre (sem tema) via Profinho.",
+            usar_web=False,
+            motivo_web="Humor leve; sem busca na web.",
+            fontes=[],
+            sessao_id=sessao_id,
+            cache_hit=False,
+            motivo_cache=None,
+            tipo_usuario=tipo,
+        )
+
     if ctx_svc.eh_consulta_pessoal(req.prompt):
         t = time.perf_counter()
         resposta_ctx = await ctx_svc.responder_com_contexto(token_id, req.prompt)
@@ -179,6 +204,49 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
                 motivo_cache=hit.motivo,
                 tipo_usuario=tipo,
             )
+
+    if (
+        req.categoria not in ("programacao", "imagem")
+        and exercicio_svc.eh_pedido_exercicio_interativo(req.prompt)
+    ):
+        cat_web: Categoria = "educacao"  # type: ignore[assignment]
+        t = time.perf_counter()
+        (
+            resposta,
+            modelo,
+            motivo_web_pipe,
+            usar_web_efetivo,
+            motivo_web,
+            fontes,
+        ) = await exercicio_svc.gerar_exercicio_interativo(
+            req.prompt, tipo, bloco_ctx, req.usar_web
+        )
+        timings["exercicio_web_s"] = round(time.perf_counter() - t, 2)
+        resposta_fmt = f"```html\n{resposta}\n```"
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta_fmt, cat_web, modelo, fontes
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        timings["total_s"] = round(time.perf_counter() - t0, 2)
+        logger.info(
+            "POST /chat exercício interativo modelo=%s web=%s | tempos=%s",
+            modelo,
+            usar_web_efetivo,
+            timings,
+        )
+        return ChatResponse(
+            categoria=cat_web,
+            modelo=modelo,
+            resposta=resposta_fmt,
+            motivo_roteamento=motivo_web_pipe,
+            usar_web=usar_web_efetivo,
+            motivo_web=motivo_web,
+            fontes=fontes,
+            sessao_id=sessao_id,
+            cache_hit=False,
+            motivo_cache=None,
+            tipo_usuario=tipo,
+        )
 
     if (
         req.usar_web is not True
@@ -251,7 +319,7 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
     else:
         timings["web_s"] = 0.0
 
-    system = req.system or perfil.system_prompt(categoria, tipo)
+    system = req.system or perfil.system_prompt(categoria, tipo, req.prompt)
 
     sessao_id = None
     if req.salvar:
@@ -266,11 +334,10 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
         )
         timings["sessao_s"] = round(time.perf_counter() - t, 2)
 
-    user_content = req.prompt
-    if contexto_web:
-        user_content = (
-            f"{req.prompt}\n\n[Informações atualizadas da web]\n{contexto_web}"
-        )
+    user_content = perfil.enriquecer_prompt_usuario(
+        req.prompt,
+        f"[Informações atualizadas da web]\n{contexto_web}" if contexto_web else "",
+    )
 
     historico_extra = [{"role": m.role, "content": m.content} for m in req.historico]
     t = time.perf_counter()
@@ -289,6 +356,7 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
         model=modelo,
         messages=messages,
         temperature=req.temperature,
+        options=common.opcoes_resposta_chat(categoria, req.prompt),
         exclusivo=common.modelo_pesado(modelo),
     )
     timings["ollama_s"] = round(time.perf_counter() - t, 2)

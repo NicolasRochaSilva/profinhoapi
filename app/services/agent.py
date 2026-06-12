@@ -22,7 +22,7 @@ from app.services import crawl4ai, searxng
 
 logger = logging.getLogger("profinho.agent.orq")
 
-_SYSTEM = """Você é o Profinho Agent, um engenheiro de software autônomo (como o modo agente do Cursor).
+_SYSTEM = """Você é o Profinho, assistente educacional com IA atuando como engenheiro de software autônomo.
 Você cria projetos completos, escreve código de qualidade e garante que ele funcione.
 
 Responda SEMPRE com um único bloco JSON válido, sem texto fora do JSON, no formato:

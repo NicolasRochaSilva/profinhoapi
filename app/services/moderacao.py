@@ -223,16 +223,16 @@ def resposta_bloqueio(bloqueio: BloqueioConteudo, tipo_usuario: str) -> str:
     rotulo = bloqueio.motivo.lower().replace("tema não permitido: ", "").rstrip(".")
     if tipo_usuario == "aluno":
         return (
-            "Oi! Eu sou o Profinho Tutor e posso te ajudar com estudos, dúvidas de matérias "
-            "escolares e exercícios. "
-            f"Não posso falar sobre {rotulo} aqui na plataforma. "
-            "Que tal me perguntar algo da sua aula ou do conteúdo que você está estudando?"
+            "Oi! Eu sou o Profinho — aquele livrinho que adora ajudar nos estudos! "
+            "Posso te ajudar com matérias, dúvidas e exercícios. "
+            f"Sobre {rotulo}, prefiro não entrar nesse assunto aqui. "
+            "Bora voltar pro conteúdo da aula? Me conta o que você está estudando!"
         )
 
     return (
-        "Sou o Profinho, focado em apoio pedagógico e conteúdos escolares. "
-        f"{bloqueio.motivo} Consultas e opiniões sobre esse assunto não são permitidas "
-        "na plataforma, para manter um ambiente seguro e neutro. "
-        "Posso ajudar com planos de aula, exercícios, explicações de conteúdo ou dúvidas "
-        "pedagógicas."
+        "Opa! Sou o Profinho, seu parceiro pedagógico de bolso. "
+        f"{bloqueio.motivo} Esse tipo de assunto não rola por aqui — "
+        "quero manter um ambiente seguro e focado na escola. "
+        "Mas planos de aula, exercícios, explicações de conteúdo? "
+        "Nisso eu sou expert — manda ver!"
     )

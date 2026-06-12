@@ -14,7 +14,7 @@ from app.schemas import Categoria, ChatRequest
 from app.services import cache_respostas as cache_svc
 from app.services import chat_common as common
 from app.services import contexto_usuario as ctx_svc
-from app.services import crawl4ai, memoria, moderacao, perfil_usuario as perfil, searxng
+from app.services import crawl4ai, exercicio_interativo as exercicio_svc, memoria, moderacao, perfil_usuario as perfil, searxng
 from app.services.sse import iter_texto_simulado, sse_event
 
 logger = logging.getLogger("profinho.chat.stream")
@@ -97,6 +97,33 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
         logger.info("POST /chat stream saudação | %.2fs", time.perf_counter() - t0)
         return
 
+    if perfil.eh_piada_generica(req.prompt):
+        categoria = req.categoria or "chat"  # type: ignore[assignment]
+        meta = _meta_base(
+            tipo,
+            categoria=categoria,
+            modelo=settings.model_chat,
+            motivo_roteamento="Piada inocente livre (sem tema) via Profinho.",
+            usar_web=False,
+            motivo_web="Humor leve; sem busca na web.",
+            fontes=[],
+            cache_hit=False,
+            motivo_cache=None,
+        )
+        partes = []
+        yield sse_event("meta", meta)
+        async for pedaco in cache_svc.iter_piada_generica(req.prompt, tipo):
+            partes.append(pedaco)
+            yield sse_event("token", {"content": pedaco})
+        resposta = "".join(partes)
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta, categoria, settings.model_chat, []
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})
+        logger.info("POST /chat stream piada genérica | %.2fs", time.perf_counter() - t0)
+        return
+
     if ctx_svc.eh_consulta_pessoal(req.prompt):
         resposta_ctx = await ctx_svc.responder_com_contexto(token_id, req.prompt)
         if ctx_svc.resposta_contexto_valida(resposta_ctx):
@@ -153,6 +180,45 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
             common.extrair_contexto_em_background(token_id, req.prompt, tipo)
             yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})
             return
+
+    if (
+        req.categoria not in ("programacao", "imagem")
+        and exercicio_svc.eh_pedido_exercicio_interativo(req.prompt)
+    ):
+        cat_web: Categoria = "educacao"  # type: ignore[assignment]
+        modelo = exercicio_svc.modelo_label()
+        prep = await exercicio_svc.preparar_para_stream(
+            req.prompt, tipo, bloco_ctx, req.usar_web
+        )
+        meta = _meta_base(
+            tipo,
+            categoria=cat_web,
+            modelo=modelo,
+            motivo_roteamento=exercicio_svc.MOTIVO_ROTEAMENTO,
+            usar_web=prep.usar_web,
+            motivo_web=prep.motivo_web,
+            fontes=prep.fontes,
+            cache_hit=False,
+            motivo_cache=None,
+        )
+        partes = []
+        yield sse_event("meta", meta)
+        async for pedaco in exercicio_svc.iter_html_pipeline(prep, req.prompt):
+            partes.append(pedaco)
+            yield sse_event("token", {"content": pedaco})
+        resposta_bruta = "".join(partes)
+        resposta = f"```html\n{exercicio_svc.extrair_html(resposta_bruta)}\n```"
+        sessao_id = await common.persistir_sessao(
+            req, token_id, resposta, cat_web, modelo, prep.fontes
+        )
+        common.extrair_contexto_em_background(token_id, req.prompt, tipo)
+        yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})
+        logger.info(
+            "POST /chat stream exercício interativo web=%s | %.2fs",
+            prep.usar_web,
+            time.perf_counter() - t0,
+        )
+        return
 
     if (
         req.usar_web is not True
@@ -217,7 +283,7 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
                 f"Fonte: {u}\n{c[:4000]}" for u, c in conteudos.items()
             )
 
-    system = req.system or perfil.system_prompt(categoria, tipo)
+    system = req.system or perfil.system_prompt(categoria, tipo, req.prompt)
     sessao_id: Optional[str] = None
     if req.salvar:
         sessao_id = await memoria.garantir_sessao(
@@ -229,11 +295,10 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
             categoria=categoria,
         )
 
-    user_content = req.prompt
-    if contexto_web:
-        user_content = (
-            f"{req.prompt}\n\n[Informações atualizadas da web]\n{contexto_web}"
-        )
+    user_content = perfil.enriquecer_prompt_usuario(
+        req.prompt,
+        f"[Informações atualizadas da web]\n{contexto_web}" if contexto_web else "",
+    )
 
     historico_extra = [{"role": m.role, "content": m.content} for m in req.historico]
     messages = await memoria.montar_contexto(
@@ -263,6 +328,7 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
         model=modelo,
         messages=messages,
         temperature=req.temperature,
+        options=common.opcoes_resposta_chat(categoria, req.prompt),
         exclusivo=common.modelo_pesado(modelo),
     ):
         partes.append(pedaco)

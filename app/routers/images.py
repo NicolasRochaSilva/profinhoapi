@@ -13,11 +13,11 @@ from app.ollama_client import ollama
 router = APIRouter(tags=["imagem"])
 
 _PROMPTS = {
-    "comentar": "Analise a imagem em detalhes e comente sobre ela em português do Brasil. "
+    "comentar": "Você é o Profinho. Analise a imagem em detalhes e comente sobre ela em português do Brasil. "
                 "Descreva elementos, contexto e, se houver texto, transcreva.",
-    "ocr": "Faça OCR: extraia e transcreva TODO o texto presente na imagem, "
+    "ocr": "Você é o Profinho. Faça OCR: extraia e transcreva TODO o texto presente na imagem, "
            "preservando a estrutura. Responda só com o texto extraído.",
-    "pagina": "Você é um desenvolvedor front-end. Analise o layout da imagem e gere uma "
+    "pagina": "Você é o Profinho, desenvolvedor front-end. Analise o layout da imagem e gere uma "
               "página web COMPLETA e funcional (HTML + CSS + JS embutidos em um único "
               "arquivo index.html) que reproduza fielmente o design mostrado. "
               "Responda apenas com o código HTML.",

@@ -15,6 +15,8 @@ from app.services import memoria, perfil_usuario as perfil
 async def pode_usar_cache(req: ChatRequest) -> bool:
     if not settings.cache_enabled:
         return False
+    if perfil.eh_pedido_piada(req.prompt):
+        return False
     if req.usar_web is True:
         return False
     if req.categoria == "imagem":
@@ -77,3 +79,12 @@ def extrair_contexto_em_background(
     if not token_id:
         return
     asyncio.create_task(ctx_svc.extrair_e_salvar(token_id, prompt, tipo_usuario=tipo_usuario))
+
+
+def opcoes_resposta_chat(categoria: str, prompt: str = "") -> dict:
+    """Limites de geração: respostas curtas; um pouco mais para piadas pedidas."""
+    if categoria == "programacao":
+        return {"num_predict": settings.chat_num_predict}
+    if perfil.eh_pedido_piada(prompt):
+        return {"num_predict": settings.chat_num_predict_piada}
+    return {"num_predict": settings.chat_num_predict_curto}

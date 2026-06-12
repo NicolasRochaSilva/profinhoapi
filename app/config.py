@@ -72,8 +72,11 @@ class Settings(BaseSettings):
     cache_max_candidatos: int = 100
 
     # Limite de tokens gerados (evita respostas infinitas em CPU).
-    chat_num_predict: int = 2048
-    chat_num_predict_rapido: int = 1200
+    chat_num_predict: int = 1200
+    chat_num_predict_curto: int = 550
+    chat_num_predict_piada: int = 720
+    chat_num_predict_rapido: int = 450
+    chat_num_predict_exercicio: int = 4096
 
     # Extração automática de contexto por token (modelo leve)
     context_extract_enabled: bool = True

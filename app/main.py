@@ -36,13 +36,13 @@ DESCRICAO = """
 **Profinho API** — plataforma SaaS de IA para professores e escolas.
 
 Capacidades:
-- 💬 **Chat** com roteamento automático entre 5 modelos especializados.
-- 🧭 **Roteador** (`llama3.2:3b`) escolhe o melhor modelo por palavras-chave + classificação.
-- 👨‍🏫 **Educação** (`qwen2.5:7b`): planos de aula, exercícios, provas, resumos.
-- 💻 **Programação** (`qwen2.5-coder:7b`): código, APIs, SQL, ASP.NET, Python.
-- 🖼️ **Visão** (`qwen2.5vl:7b`): comentar imagens, OCR e gerar páginas a partir de imagens.
+- 💬 **Chat** com roteamento automático entre modelos internos (conversa, educação, código, visão).
+- 🧭 **Roteador** escolhe o melhor modelo por palavras-chave + classificação.
+- 👨‍🏫 Planos de aula, exercícios, provas, resumos e explicações de conteúdo.
+- 💻 Código, APIs, SQL, ASP.NET, Python.
+- 🖼️ Análise de imagens, OCR e geração de páginas a partir de layouts.
 - 🌐 **Pesquisa** (SearXNG + Crawl4AI): ler documentação e gerar código a partir dela.
-- 🤖 **Agente** estilo Cursor: cria arquivos, escreve código e valida a execução.
+- 🤖 **Agente**: cria arquivos, escreve código e valida a execução (sempre como Profinho).
 - 🧠 **Memória** (estilo ChatGPT/Claude/Cursor): sessões/conversas com histórico de contexto + memória de longo prazo.
 - 🔌 **OpenAI-compatible** (`/v1`): use no VS Code para gerar código como o Cursor.
 

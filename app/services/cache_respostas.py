@@ -98,6 +98,11 @@ def eh_pergunta_generica(texto: str) -> bool:
     if eh_saudacao_simples(texto):
         return False
 
+    from app.services.perfil_usuario import eh_pedido_piada
+
+    if eh_pedido_piada(texto):
+        return False
+
     norm = normalizar_prompt(texto)
     if len(norm) < 10:
         return False
@@ -141,17 +146,14 @@ async def responder_pergunta_generica(
     categoria: str = "educacao",
 ) -> tuple[str, str]:
     """Perguntas factuais ('o que é…') via roteador 3b — muito mais rápido que 8b/7b."""
-    from app.services.perfil_usuario import system_prompt
+    from app.services.perfil_usuario import INSTRUCAO_PROMPT_USUARIO, system_prompt
 
     modelo = settings.model_router
     ctx = f"\n\n{contexto_token}" if contexto_token else ""
     resposta = await ollama.generate(
         model=modelo,
-        system=system_prompt(categoria, tipo_usuario),
-        prompt=(
-            f"Pergunta: {prompt[:2000]}{ctx}\n\n"
-            "Responda de forma clara, didática e objetiva em português do Brasil."
-        ),
+        system=system_prompt(categoria, tipo_usuario, prompt),
+        prompt=f"Pergunta: {prompt[:2000]}{ctx}\n\n{INSTRUCAO_PROMPT_USUARIO}",
         temperature=0.5,
         options={"num_predict": settings.chat_num_predict_rapido},
         exclusivo=False,
@@ -165,17 +167,14 @@ async def iter_pergunta_generica(
     contexto_token: str = "",
     categoria: str = "educacao",
 ):
-    from app.services.perfil_usuario import system_prompt
+    from app.services.perfil_usuario import INSTRUCAO_PROMPT_USUARIO, system_prompt
 
     modelo = settings.model_router
     ctx = f"\n\n{contexto_token}" if contexto_token else ""
     async for parte in ollama.generate_stream(
         model=modelo,
-        system=system_prompt(categoria, tipo_usuario),
-        prompt=(
-            f"Pergunta: {prompt[:2000]}{ctx}\n\n"
-            "Responda de forma clara, didática e objetiva em português do Brasil."
-        ),
+        system=system_prompt(categoria, tipo_usuario, prompt),
+        prompt=f"Pergunta: {prompt[:2000]}{ctx}\n\n{INSTRUCAO_PROMPT_USUARIO}",
         temperature=0.5,
         options={"num_predict": settings.chat_num_predict_rapido},
         exclusivo=False,
@@ -226,6 +225,44 @@ async def iter_saudacao(
         yield parte
 
 
+async def responder_piada_generica(
+    prompt: str, tipo_usuario: str = "professor"
+) -> tuple[str, str]:
+    """Piada livre sem tema — via phi3 com personalidade do Profinho."""
+    from app.services.perfil_usuario import instrucao_piada_generica
+
+    modelo = settings.model_chat
+    resposta = await ollama.generate(
+        model=modelo,
+        prompt=(
+            f"{instrucao_piada_generica(tipo_usuario)}\n\n"
+            f"Pedido: \"{prompt[:200]}\"\n\n"
+            "Suas piadas:"
+        ),
+        temperature=0.75,
+        options={"num_predict": settings.chat_num_predict_piada},
+        exclusivo=True,
+    )
+    return resposta, modelo
+
+
+async def iter_piada_generica(prompt: str, tipo_usuario: str = "professor"):
+    from app.services.perfil_usuario import instrucao_piada_generica
+
+    async for parte in ollama.generate_stream(
+        model=settings.model_chat,
+        prompt=(
+            f"{instrucao_piada_generica(tipo_usuario)}\n\n"
+            f"Pedido: \"{prompt[:200]}\"\n\n"
+            "Suas piadas:"
+        ),
+        temperature=0.75,
+        options={"num_predict": settings.chat_num_predict_piada},
+        exclusivo=True,
+    ):
+        yield parte
+
+
 async def adaptar_resposta_cache(
     pergunta: str, resposta_base: str, contexto_token: str = ""
 ) -> str:
@@ -235,14 +272,15 @@ async def adaptar_resposta_cache(
         model=settings.model_light,
         prompt=(
             "Adapte a resposta abaixo para a pergunta do usuário. "
-            "Mantenha os fatos; ajuste tom e foco. Responda em português do Brasil."
+            "Mantenha os fatos; resposta didática, curta e objetiva. "
+            "Português do Brasil."
             f"{ctx}\n\n"
             f"Pergunta: {pergunta[:1500]}\n\n"
             f"Resposta base:\n{resposta_base[:6000]}\n\n"
             "Resposta adaptada:"
         ),
         temperature=0.3,
-        options={"num_predict": 1024},
+        options={"num_predict": settings.chat_num_predict_curto},
     )
 
 

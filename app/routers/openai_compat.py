@@ -22,13 +22,15 @@ from app.config import settings
 from app.ollama_client import ollama
 from app.router_model import rotear
 from app.schemas import OpenAIChatRequest
+from app.services import chat_common as common
 from app.services import moderacao, perfil_usuario as perfil
 
 router = APIRouter(tags=["openai-compat"])
 
-# Mapa de "modelos" expostos para o cliente OpenAI.
+# Mapa de "modelos" expostos para o cliente OpenAI (IDs de roteamento; identidade sempre Profinho).
 _MODELOS_EXPOSTOS = {
-    "profinho-auto": None,  # roteamento automático
+    "profinho": None,  # roteamento automático (recomendado)
+    "profinho-auto": None,  # alias legado
     "profinho-chat": settings.model_chat,
     "profinho-coder": settings.model_code,
     "profinho-edu": settings.model_edu,
@@ -49,6 +51,24 @@ def _extrair_texto(content: Any) -> str:
     return str(content)
 
 
+def _categoria_openai(model_name: str) -> str:
+    m = (model_name or "").lower()
+    if "coder" in m:
+        return "programacao"
+    if "edu" in m:
+        return "educacao"
+    if "vision" in m:
+        return "imagem"
+    return "chat"
+
+
+def _enriquecer_ultimo_usuario(messages: list[dict[str, str]]) -> None:
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i]["role"] == "user":
+            messages[i]["content"] = perfil.enriquecer_prompt_usuario(messages[i]["content"])
+            return
+
+
 @router.get("/v1/models", summary="Listar modelos (OpenAI-compatible)")
 async def list_models(_=Depends(require_token)):
     data = [
@@ -59,10 +79,10 @@ async def list_models(_=Depends(require_token)):
 
 
 async def _resolver_modelo(req: OpenAIChatRequest) -> str:
-    nome = (req.model or "profinho-auto").strip()
+    nome = (req.model or "profinho").strip()
     if nome in _MODELOS_EXPOSTOS and _MODELOS_EXPOSTOS[nome]:
         return _MODELOS_EXPOSTOS[nome]
-    if nome == "profinho-auto" or nome not in _MODELOS_EXPOSTOS:
+    if nome in ("profinho", "profinho-auto") or nome not in _MODELOS_EXPOSTOS:
         # roteia pela última mensagem do usuário
         ultima = ""
         for m in reversed(req.messages):
@@ -106,16 +126,25 @@ async def chat_completions(req: OpenAIChatRequest, token=Depends(require_token))
 
     modelo = await _resolver_modelo(req)
     messages = [{"role": m.role, "content": _extrair_texto(m.content)} for m in req.messages]
+    cat = _categoria_openai(req.model or "")
+    ultima_user = ""
+    for m in reversed(req.messages):
+        if m.role == "user":
+            ultima_user = _extrair_texto(m.content)
+            break
     if messages and messages[0]["role"] != "system":
-        cat = "programacao" if "coder" in (req.model or "") else "chat"
         messages.insert(
             0,
-            {"role": "system", "content": perfil.system_prompt(cat, tipo)},
+            {"role": "system", "content": perfil.system_prompt(cat, tipo, ultima_user)},
         )
     elif messages and messages[0]["role"] == "system" and tipo == "aluno":
         messages[0]["content"] = (
-            perfil.system_prompt("chat", tipo) + "\n\n" + messages[0]["content"]
+            perfil.system_prompt("chat", tipo, ultima_user)
+            + "\n\n"
+            + messages[0]["content"]
         )
+    _enriquecer_ultimo_usuario(messages)
+    opts = common.opcoes_resposta_chat(cat, ultima_user)
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     criado = int(time.time())
 
@@ -126,6 +155,7 @@ async def chat_completions(req: OpenAIChatRequest, token=Depends(require_token))
                 model=modelo,
                 messages=messages,
                 temperature=req.temperature,
+                options=opts,
                 exclusivo=True,
             ):
                 delta: dict[str, str] = {"content": pedaco}
@@ -159,7 +189,11 @@ async def chat_completions(req: OpenAIChatRequest, token=Depends(require_token))
         )
 
     texto = await ollama.chat(
-        model=modelo, messages=messages, temperature=req.temperature, exclusivo=True
+        model=modelo,
+        messages=messages,
+        temperature=req.temperature,
+        options=opts,
+        exclusivo=True,
     )
     return {
         "id": completion_id,
