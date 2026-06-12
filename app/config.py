@@ -74,7 +74,8 @@ class Settings(BaseSettings):
     # Limite de tokens gerados (evita respostas infinitas em CPU).
     chat_num_predict: int = 1200
     chat_num_predict_curto: int = 550
-    chat_num_predict_piada: int = 720
+    chat_num_predict_piada: int = 420
+    chat_num_predict_piada_rapido: int = 260
     chat_num_predict_rapido: int = 450
     chat_num_predict_exercicio: int = 4096
 

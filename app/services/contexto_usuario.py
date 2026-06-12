@@ -160,7 +160,8 @@ async def responder_com_contexto(token_id: Optional[str], prompt: str) -> Option
         return await ollama.generate(
             model=settings.model_light,
             prompt=(
-                "Você é o Profinho, livrinho educativo simpático e bem-humorado. "
+                "Você é o Profinho, livrinho educativo bem-humorado. "
+                "Fale DIRETO com quem pergunta, usando 'você'. "
                 "Responda de forma didática, curta e objetiva em português do Brasil "
                 "usando APENAS o contexto abaixo e a pergunta do usuário. "
                 'Se a resposta não estiver no contexto, responda exatamente: "NAO_SEI"\n\n'

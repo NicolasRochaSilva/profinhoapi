@@ -127,11 +127,12 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
 
     if perfil.eh_piada_generica(req.prompt):
         categoria = req.categoria or "chat"  # type: ignore[assignment]
+        modelo = settings.model_light
         meta = _meta_base(
             tipo,
             categoria=categoria,
-            modelo=settings.model_chat,
-            motivo_roteamento="Piada inocente livre (sem tema) via Profinho.",
+            modelo=modelo,
+            motivo_roteamento="Piada inocente livre via Profinho (modelo leve).",
             usar_web=False,
             motivo_web="Humor leve; sem busca na web.",
             fontes=[],
@@ -145,7 +146,7 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
             yield sse_event("token", {"content": pedaco})
         resposta = "".join(partes)
         sessao_id = await common.persistir_sessao(
-            req, token_id, resposta, categoria, settings.model_chat, []
+            req, token_id, resposta, categoria, modelo, []
         )
         common.extrair_contexto_em_background(token_id, req.prompt, tipo)
         yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})
@@ -154,11 +155,12 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
 
     if perfil.eh_pedido_piada_conteudo(req.prompt):
         categoria = req.categoria or "educacao"  # type: ignore[assignment]
+        modelo = settings.model_router
         meta = _meta_base(
             tipo,
             categoria=categoria,
-            modelo=settings.model_chat,
-            motivo_roteamento="Piadas inocentes sobre o tema pedido (Profinho).",
+            modelo=modelo,
+            motivo_roteamento="Piadas sobre o tema via Profinho.",
             usar_web=False,
             motivo_web="Humor sobre conteúdo; sem web.",
             fontes=[],
@@ -172,7 +174,7 @@ async def eventos_chat(req: ChatRequest, token: dict) -> AsyncIterator[str]:
             yield sse_event("token", {"content": pedaco})
         resposta = "".join(partes)
         sessao_id = await common.persistir_sessao(
-            req, token_id, resposta, categoria, settings.model_chat, []
+            req, token_id, resposta, categoria, modelo, []
         )
         common.extrair_contexto_em_background(token_id, req.prompt, tipo)
         yield sse_event("done", {**meta, "resposta": resposta, "sessao_id": sessao_id})

@@ -157,7 +157,7 @@ async def _chat_json(req: ChatRequest, token: dict) -> ChatResponse:
             categoria=categoria,
             modelo=modelo,
             resposta=resposta,
-            motivo_roteamento="Piada inocente livre (sem tema) via Profinho.",
+            motivo_roteamento="Piada inocente livre via Profinho (modelo leve).",
             usar_web=False,
             motivo_web="Humor leve; sem busca na web.",
             fontes=[],

@@ -268,37 +268,37 @@ async def iter_identidade(prompt: str, tipo_usuario: str = "professor"):
 async def responder_piada_generica(
     prompt: str, tipo_usuario: str = "professor"
 ) -> tuple[str, str]:
-    """Piada livre sem tema — via phi3 com personalidade do Profinho."""
+    """Piada livre — modelo ultra-leve, resposta rápida."""
     from app.services.perfil_usuario import instrucao_piada_generica
 
-    modelo = settings.model_chat
+    modelo = settings.model_light
     resposta = await ollama.generate(
         model=modelo,
         prompt=(
             f"{instrucao_piada_generica(tipo_usuario)}\n\n"
-            f"Pedido: \"{prompt[:200]}\"\n\n"
-            "Suas piadas:"
+            f'Quem está no chat disse: "{prompt[:120]}"\n\n'
+            "Suas piadas (fale com 'você'):"
         ),
-        temperature=0.75,
-        options={"num_predict": settings.chat_num_predict_piada},
-        exclusivo=True,
+        temperature=0.65,
+        options={"num_predict": settings.chat_num_predict_piada_rapido},
+        exclusivo=False,
     )
-    return resposta, modelo
+    return resposta.strip(), modelo
 
 
 async def iter_piada_generica(prompt: str, tipo_usuario: str = "professor"):
     from app.services.perfil_usuario import instrucao_piada_generica
 
     async for parte in ollama.generate_stream(
-        model=settings.model_chat,
+        model=settings.model_light,
         prompt=(
             f"{instrucao_piada_generica(tipo_usuario)}\n\n"
-            f"Pedido: \"{prompt[:200]}\"\n\n"
-            "Suas piadas:"
+            f'Quem está no chat disse: "{prompt[:120]}"\n\n'
+            "Suas piadas (fale com 'você'):"
         ),
-        temperature=0.75,
-        options={"num_predict": settings.chat_num_predict_piada},
-        exclusivo=True,
+        temperature=0.65,
+        options={"num_predict": settings.chat_num_predict_piada_rapido},
+        exclusivo=False,
     ):
         yield parte
 
@@ -309,17 +309,17 @@ async def responder_piada_conteudo(
     """Piadas inocentes sobre um tema (ex.: fotossíntese)."""
     from app.services.perfil_usuario import instrucao_piada_conteudo
 
-    modelo = settings.model_chat
+    modelo = settings.model_router
     resposta = await ollama.generate(
         model=modelo,
         prompt=(
             f"{instrucao_piada_conteudo(tipo_usuario)}\n\n"
-            f'Pedido: "{prompt[:300]}"\n\n'
-            "Suas piadas (somente piadas, sem aula):"
+            f'Quem está no chat disse: "{prompt[:300]}"\n\n'
+            "Suas piadas (fale com 'você', sem aula):"
         ),
         temperature=0.55,
         options={"num_predict": settings.chat_num_predict_piada},
-        exclusivo=True,
+        exclusivo=False,
     )
     return resposta.strip(), modelo
 
@@ -328,15 +328,15 @@ async def iter_piada_conteudo(prompt: str, tipo_usuario: str = "professor"):
     from app.services.perfil_usuario import instrucao_piada_conteudo
 
     async for parte in ollama.generate_stream(
-        model=settings.model_chat,
+        model=settings.model_router,
         prompt=(
             f"{instrucao_piada_conteudo(tipo_usuario)}\n\n"
-            f'Pedido: "{prompt[:300]}"\n\n'
-            "Suas piadas (somente piadas, sem aula):"
+            f'Quem está no chat disse: "{prompt[:300]}"\n\n'
+            "Suas piadas (fale com 'você', sem aula):"
         ),
         temperature=0.55,
         options={"num_predict": settings.chat_num_predict_piada},
-        exclusivo=True,
+        exclusivo=False,
     ):
         yield parte
 

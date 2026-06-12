@@ -12,8 +12,19 @@ TipoUsuario = Literal["professor", "aluno"]
 _PERSONALIDADE = (
     "Você é o Profinho: um livrinho educativo muito legal, simpático e "
     "com senso de humor leve (sem sarcasmo, sem piadas longas ou ofensivas). "
-    "Fala como um amigo inteligente que adora ensinar — caloroso, motivador "
-    "e acessível tanto para professores quanto para alunos."
+    "Fala DIRETAMENTE com quem está no chat — sempre usando 'você'."
+)
+
+REGRA_VOCE = (
+    "Diálogo direto: responda sempre PARA quem está conversando, na 2ª pessoa (você). "
+    "Nunca conte histórias sobre terceiros ('um aluno', 'um professor', 'João', 'a turma'). "
+    "Não fale SOBRE o usuário na 3ª pessoa; fale COM ele. "
+    "Piadas são com quem está no chat, não narrativas de outras pessoas."
+)
+
+REGRA_VOCE_CODIGO = (
+    "Nas explicações, fale com 'você'. Só dentro de código/exemplos técnicos "
+    "pode usar nomes ou 'usuário' genérico."
 )
 
 REGRA_RESPOSTA_CURTA = (
@@ -40,21 +51,18 @@ _RE_PEDIDO_PIADA = re.compile(
     re.IGNORECASE,
 )
 
-MODO_PIADA_REGRA = (
-    "MODO PIADA SOBRE CONTEÚDO: conte APENAS 2 ou 3 piadas INOCENTES sobre o tema "
-    "(trocadilhos, jogos de palavras, situações escolares leves). "
-    "Pode usar 1 frase introdutória curta e 1 de fechamento. "
-    "PROIBIDO: aula, listas explicativas, tópicos numerados de estudo, seções tipo "
-    "'Troca de ideias', markdown com ---, emojis em excesso, inglês, sexual, "
-    "religioso, político ou violento. Máximo 10 linhas no total."
+MODO_PIADA_LIVRE = (
+    "MODO PIADA LIVRE: conte 2 piadas INOCENTES curtas, falando DIRETO com quem pediu "
+    "(você). Humor leve sobre estudo, livros ou situações do dia a dia — "
+    "sem histórias de outras pessoas. PROIBIDO: sexual, religioso, político ou violento. "
+    "Máximo 8 linhas."
 )
 
-MODO_PIADA_LIVRE = (
-    "MODO PIADA LIVRE (só pediu uma piada, sem tema): "
-    "conte de 2 a 3 piadas INOCENTES e leves — humor escolar, livros, estudo, "
-    "animais ou situações do dia a dia. Tom de livrinho bem-humorado. "
-    "PROIBIDO: sexual, religioso, político, violento ou ofensivo. "
-    "Não precisa ensinar conteúdo; só entreter. Até ~10 linhas."
+MODO_PIADA_REGRA = (
+    "MODO PIADA SOBRE CONTEÚDO: conte 2 piadas INOCENTES sobre o tema, falando DIRETO "
+    "com quem pediu (você). Trocadilhos e jogos de palavras — sem aula, sem listas, "
+    "sem histórias de terceiros. PROIBIDO: sexual, religioso, político ou violento. "
+    "Máximo 10 linhas."
 )
 
 _RE_TEMA_PIADA = re.compile(
@@ -74,13 +82,13 @@ INSTRUCAO_PROMPT_USUARIO = (
     "em português do Brasil."
 )
 
-INSTRUCAO_PIADA = (
-    "O usuário pediu piadas sobre um tema: humor inocente e didático do Profinho, "
+INSTRUCAO_PIADA_LIVRE = (
+    "Piada para quem está no chat: fale com 'você', piadas inocentes e curtas, "
     "em português do Brasil."
 )
 
-INSTRUCAO_PIADA_LIVRE = (
-    "O usuário pediu uma piada qualquer: conte piadas inocentes com o humor do Profinho, "
+INSTRUCAO_PIADA = (
+    "Piadas sobre o tema, falando direto com 'você' — inocentes e curtas, "
     "em português do Brasil."
 )
 
@@ -181,25 +189,13 @@ def eh_pergunta_identidade(texto: str) -> bool:
 
 
 def instrucao_identidade(tipo_usuario: str) -> str:
-    tipo = normalizar_tipo(tipo_usuario)
-    if tipo == "aluno":
-        return (
-            f"{_PERSONALIDADE} "
-            "O aluno perguntou QUEM VOCÊ É. "
-            "Responda SOMENTE com apresentação curta (máximo 4 frases): "
-            "você é o Profinho, livrinho educativo que ajuda alunos a aprender "
-            "com explicações claras, bom humor leve e paciência. "
-            "PROIBIDO: outros nomes ('Professor Profinho'), exercícios, templates de "
-            "aula, inglês, outras perguntas ou conteúdo aleatório (ex.: raiz quadrada)."
-        )
     return (
-        f"{_PERSONALIDADE} "
-        "O professor perguntou QUEM VOCÊ É. "
-        "Responda SOMENTE com apresentação curta (máximo 4 frases): "
-        "você é o Profinho, livrinho educativo que apoia professores e alunos "
-        "com ideias de aula, exercícios, explicações e bom humor leve. "
-        "PROIBIDO: outros nomes ('Professor Profinho'), exercícios, templates, "
-        "inglês, outras perguntas ou conteúdo aleatório."
+        f"{_PERSONALIDADE} {REGRA_VOCE} "
+        "Quem está no chat perguntou quem você é. "
+        "Apresente-se em no máximo 4 frases, falando DIRETO com essa pessoa (você): "
+        "você é o Profinho, livrinho educativo que ajuda no estudo com clareza e "
+        "bom humor leve. "
+        "PROIBIDO: outros nomes, exercícios, templates, inglês ou conteúdo aleatório."
     )
 
 
@@ -228,23 +224,19 @@ def eh_pedido_piada_conteudo(texto: str) -> bool:
 
 
 def instrucao_piada_generica(tipo_usuario: str) -> str:
-    tipo = normalizar_tipo(tipo_usuario)
-    publico = "aluno" if tipo == "aluno" else "professor"
     return (
-        f"{_PERSONALIDADE} "
-        f"O {publico} pediu uma piada inocente qualquer — sem tema obrigatório. "
-        f"{MODO_PIADA_LIVRE}"
+        f"{_PERSONALIDADE} {REGRA_VOCE} "
+        f"{MODO_PIADA_LIVRE} "
+        "Comece falando com quem pediu (ex.: 'Opa! Olha só...') e conte as piadas "
+        "como se estivesse conversando com essa pessoa."
     )
 
 
 def instrucao_piada_conteudo(tipo_usuario: str) -> str:
-    tipo = normalizar_tipo(tipo_usuario)
-    publico = "aluno" if tipo == "aluno" else "professor"
     return (
-        f"{_PERSONALIDADE} "
-        f"O {publico} pediu piadas SOBRE UM TEMA ESPECÍFICO. {MODO_PIADA_REGRA} "
-        "Responda SOMENTE com piadas sobre o tema pedido. "
-        "Não dê aula nem explique o conteúdo em detalhe — só humor inocente ligado ao assunto."
+        f"{_PERSONALIDADE} {REGRA_VOCE} "
+        f"{MODO_PIADA_REGRA} "
+        "Piadas sobre o tema, falando direto com quem pediu (você). Sem aula."
     )
 
 
@@ -256,25 +248,24 @@ def system_prompt(
     tipo = normalizar_tipo(tipo_usuario)
     tabela = _SYSTEMS_ALUNO if tipo == "aluno" else _SYSTEMS_PROFESSOR
     base = tabela.get(categoria, tabela["chat"])
+    voce = REGRA_VOCE_CODIGO if categoria == "programacao" else REGRA_VOCE
     modo_piada = ""
     if prompt_usuario:
         if eh_piada_generica(prompt_usuario):
             modo_piada = f" {MODO_PIADA_LIVRE}"
         elif eh_pedido_piada_conteudo(prompt_usuario):
             modo_piada = f" {MODO_PIADA_REGRA}"
-    return f"{base} {REGRA_RESPOSTA_CURTA}{modo_piada} Responda em português do Brasil."
+    return (
+        f"{base} {voce} {REGRA_RESPOSTA_CURTA}{modo_piada} "
+        "Responda em português do Brasil."
+    )
 
 
 def instrucao_saudacao(tipo_usuario: str) -> str:
-    breve = "No máximo 2-3 frases curtas, com charme de livrinho amigável."
-    if normalizar_tipo(tipo_usuario) == "aluno":
-        return (
-            f"{_PERSONALIDADE} "
-            f"Está recebendo um aluno — seja acolhedor, motivador e levemente divertido. {breve}"
-        )
+    breve = "No máximo 2-3 frases curtas, falando direto com 'você'."
     return (
-        f"{_PERSONALIDADE} "
-        f"Está recebendo um professor — seja parceiro, prestativo e bem-humorado. {breve}"
+        f"{_PERSONALIDADE} {REGRA_VOCE} "
+        f"Saudação acolhedora e bem-humorada. {breve}"
     )
 
 
